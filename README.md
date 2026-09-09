@@ -6,14 +6,15 @@ Published at **https://vendling.dev**.
 
 | What | Where |
 |---|---|
-| The spec (Chinese, normative): capabilities, entities, status machines, guardrails, the raw 友宝 upstream contract, legacy→standard route mapping | [`spec/commerce-api.md`](spec/commerce-api.md) → https://vendling.dev/api/ |
+| The spec (Chinese, normative): capabilities, entities, status machines, guardrails, the vendor-neutral adapter contract, capability × device matrix | [`spec/commerce-api.md`](spec/commerce-api.md) → https://vendling.dev/api/ |
 | OpenAPI 3.1 | [`openapi/vendling-commerce.openapi.yaml`](openapi/vendling-commerce.openapi.yaml) → https://vendling.dev/api/reference |
 | Agent skill (Claude Code / any agent): identity rules, safety rules, recipes, stdlib Python client | [`skill/vendling-commerce-api/`](skill/vendling-commerce-api/) → https://vendling.dev/api/skill/ |
 | One-line agent setup, Cloudflare-style | [`agent-setup/prompt.md`](agent-setup/prompt.md) → https://vendling.dev/api/agent-setup/prompt.md |
 | Agent-readable index | https://vendling.dev/llms.txt · https://vendling.dev/api/llms.txt |
 
 The API itself is served by the (private) `vendling-core` repo at `https://vendling.xiaopingfeng.com`
-(`/ucp/v1/*` + `/.well-known/ucp`, plus the legacy routes). The standard surface follows the
+(`/ucp/v1/*` + `/.well-known/ucp`). Machines and suppliers plug in through vendor adapters; the public docs
+never name a vendor and use the placeholder `acme`. The standard surface follows the
 [Universal Commerce Protocol](https://ucp.dev) `2026-08-25` with `com.xiaopingfeng.vendling.*` extensions.
 
 ## Set an agent up in one line

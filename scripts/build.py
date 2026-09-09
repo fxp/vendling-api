@@ -99,6 +99,14 @@ img{max-width:100%;height:auto}
 .card{display:block;border:1px solid var(--line);border-radius:10px;padding:16px 18px;color:var(--fg-dim);background:var(--side)}
 .card:hover{border-color:var(--accent);text-decoration:none}.card b{display:block;color:var(--fg);font-size:16px;margin-bottom:4px}.card small{color:var(--fg-mute)}
 .hero{padding:40px 0 10px}.hero h1{font-size:44px;margin:0 0 10px}.hero p{font-size:18px;max-width:70ch}
+.devsel{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 6px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--side)}
+.devsel .lbl{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-mute);margin-right:4px}
+.devsel button{font:13px/1 inherit;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg-dim);cursor:pointer}
+.devsel button:hover{border-color:var(--accent)}.devsel button.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.devsel .hint{flex-basis:100%;font-size:13px;color:var(--fg-mute);margin-top:2px}
+section.off>*:not(h2):not(h3){display:none}section.off h2,section.off h3{opacity:.45}
+section.off h2::after,section.off h3::after{content:" · 与所选设备无关";font-size:12px;font-weight:400;color:var(--fg-mute)}
+aside .toc a.off{opacity:.4}
 .doclist{list-style:none;padding:0;margin:8px 0 0}.doclist li{border-bottom:1px solid var(--line);padding:12px 0}.doclist li a{font-weight:600;color:var(--fg)}.doclist li small{display:block;color:var(--fg-mute)}
 @media(max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}main{padding:20px 18px 60px}h1{font-size:28px}.hero h1{font-size:32px}}
 """
@@ -112,7 +120,12 @@ if(b)b.addEventListener('click',function(){set(cur()==='dark'?'light':'dark')});
 var links=[].slice.call(document.querySelectorAll('aside .toc a'));var heads=links.map(function(a){return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)))}).filter(Boolean);
 function mark(){var y=window.scrollY+90,best=null;heads.forEach(function(el){if(el.offsetTop<=y)best=el});links.forEach(function(a){a.classList.toggle('here',!!best&&decodeURIComponent(a.getAttribute('href').slice(1))===best.id)});
 var on=document.querySelector('aside .toc a.here');if(on){var r=on.getBoundingClientRect(),s=on.closest('aside');if(r.top<60||r.bottom>innerHeight-40)on.scrollIntoView({block:'center'})}}
-addEventListener('scroll',mark,{passive:true});mark();})();
+addEventListener('scroll',mark,{passive:true});mark();
+var sel=document.querySelector('.devsel');if(sel){var K='vendling.docs.device',HINT={all:'显示全部章节。',machine:'你运营的机器由一个平台管理：库存、交易流水、改价、补货推荐走 machine 命名空间。',supply:'你有供货方或采购渠道：供货方目录、结账下单、采购单状态走 supply 命名空间。',adapter:'你的设备或供货方还没有适配器：看通用约定、命名空间与附录 A 的适配器契约。'};
+function apply(d){document.querySelectorAll('section[data-profiles]').forEach(function(s){var ps=s.getAttribute('data-profiles').split(',');var on=d==='all'||ps.indexOf('all')>=0||ps.indexOf(d)>=0;s.classList.toggle('off',!on);var h=s.querySelector('h2,h3');if(h){var a=document.querySelector('aside .toc a[href="#'+CSS.escape(h.id)+'"]');if(a)a.classList.toggle('off',!on)}});
+sel.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-device')===d)});var hn=sel.querySelector('.hint');if(hn)hn.textContent=HINT[d]||'';localStorage.setItem(K,d)}
+sel.addEventListener('click',function(e){var b=e.target.closest('button[data-device]');if(b)apply(b.getAttribute('data-device'))});
+var q=new URLSearchParams(location.search).get('device');apply(q||localStorage.getItem(K)||'all')}})();
 """
 
 
@@ -189,6 +202,36 @@ def render_md(text: str, toc_depth: str = "2-3") -> tuple[str, str]:
 
 # ── /api/ ────────────────────────────────────────────────────────────────
 
+PROFILE_RE = re.compile(r"\s*<!--\s*profiles:\s*([a-z, ]+?)\s*-->")
+
+
+def wrap_profiles(body: str) -> str:
+    """Wrap every h2/h3 segment in <section data-profiles="…">. A segment's
+    profiles come from a `<!-- profiles: a,b -->` comment right after its
+    heading (written in the markdown); an h3 without one inherits its h2's.
+    Unmarked sections apply to everyone. The device selector on the page
+    dims sections whose profiles don't include the chosen device."""
+    parts = re.split(r"(?=<h[23] )", body)
+    out: list[str] = []
+    h2_profiles = "all"
+    for part in parts:
+        m = re.match(r"<h([23]) id=\"([^\"]+)\"", part)
+        if not m:
+            out.append(part)
+            continue
+        level, hid = m.group(1), m.group(2)
+        pm = PROFILE_RE.search(part)
+        if pm:
+            profiles = ",".join(p.strip() for p in pm.group(1).split(",") if p.strip())
+            part = part[: pm.start()] + part[pm.end():]
+        else:
+            profiles = "all" if level == "2" else h2_profiles
+        if level == "2":
+            h2_profiles = profiles
+        out.append(f'<section data-level="{level}" data-profiles="{profiles}" data-heading="{hid}">{part}</section>')
+    return "".join(out)
+
+
 def build_guide(site: Site) -> str:
     src = MD.read_text(encoding="utf-8")
     src = src.replace(
@@ -200,6 +243,15 @@ def build_guide(site: Site) -> str:
         target = {"api.md": "/docs/routes/", "event-system.md": "/docs/event-system/", "face-split.md": "/docs/face-split/", "scenarios.md": "/docs/scenarios/"}[name]
         src = src.replace(f"]({name})", f"]({target if site.with_docs else CORE_REPO + '/blob/main/docs/' + name})")
     body, toc = render_md(src)
+    body = wrap_profiles(body)
+    selector = (
+        '<div class="devsel" role="group" aria-label="我有什么"><span class="lbl">我有什么</span>'
+        '<button data-device="all" class="on">全部</button>'
+        '<button data-device="machine">我运营售货机</button>'
+        '<button data-device="supply">我有供货 / 采购渠道</button>'
+        '<button data-device="adapter">我要接入新设备或供货方</button>'
+        '<span class="hint">显示全部章节。</span></div>'
+    )
     setup = (
         '<h2 id="agent-setup">Agent 一键接入<a class="headerlink" href="#agent-setup">#</a></h2>'
         "<p>把下面这句话发给你的 Agent（Claude Code、Codex、Cursor、Windsurf、OpenCode 等），它会自己装好 skill、配好 token、验证连接：</p>"
@@ -219,7 +271,7 @@ def build_guide(site: Site) -> str:
     page = head(
         site,
         "Vendling Commerce API · 标准接口文档（UCP 对齐）",
-        "Vendling 售货机智能体的商品类接口规范：供应商 SKU 目录、机器库存、采购结账、订单、改价、补货、审批、事件。按 Google UCP 对齐，含友宝上游接口原始形态。",
+        "Vendling 售货机智能体的商品类接口规范：供货方 SKU 目录、机器库存、采购结账、订单、改价、补货、审批、事件。按 Google UCP 对齐，厂商无关，设备通过适配器接入。",
         "index",
         API_BASE,
     )
@@ -227,6 +279,7 @@ def build_guide(site: Site) -> str:
 <aside><div class="meta">目录</div>{toc}</aside>
 <main><article>
 <div class="meta">Vendling · API · 构建 {BUILT}</div>
+{selector}
 {body}
 {downloads}
 {FOOT}
@@ -304,21 +357,21 @@ def build_api_llms() -> str:
     return f"""# Vendling Commerce API
 
 > UCP-aligned commerce interface of vendling-core, the AI agent that runs a real vending
-> route (two 友宝 machines in Beijing). Supplier SKU catalog, machine inventory, wholesale
+> route (two machines in Beijing). Supplier SKU catalog, machine inventory, wholesale
 > purchase checkout, sales ledger, live price changes, replenishment, approvals, events.
 > Spec version 2026-09-09, aligned with UCP 2026-08-25. Amounts are integer CNY fen;
-> ids are `<namespace>:<vendor_sku>` (namespaces: youbao-wholesale, youbao-vm, yuanqi).
+> ids are `<vendor>-<role>:<vendor_sku>`; the live namespaces come from GET /ucp/v1/namespaces.
 
-Standard routes live at `https://vendling.xiaopingfeng.com/ucp/v1/*` once deployed; check
-`GET https://vendling.xiaopingfeng.com/.well-known/ucp`. Legacy routes
-(`/api/youbao/*`, `/agents/vendling-agent/route-01/*`) stay available. Everything is
-behind `Authorization: Bearer <VENDLING_AUTH_TOKEN>`. Two actions spend real money or
+Routes live at `https://vendling.xiaopingfeng.com/ucp/v1/*`; discovery at
+`GET https://vendling.xiaopingfeng.com/.well-known/ucp` (public). Everything else is
+behind `Authorization: Bearer <VENDLING_AUTH_TOKEN>`. The docs never name a vendor: machines
+and suppliers plug in through adapters and the docs use the placeholder vendor `acme`. Two actions spend real money or
 change a live price and require the JSON boolean `confirm: true`. Staging (mock data, no
 supplier credentials): `https://vendling-core-staging.fxp007.workers.dev`.
 
 ## Docs
 
-- [Guide (Chinese, normative)]({API_BASE}): capabilities, entities, status machines, guardrails, upstream 友宝 contract (appendix A), legacy→standard route mapping (appendix B)
+- [Guide (Chinese, normative)]({API_BASE}): capabilities, entities, status machines, guardrails, the adapter contract (appendix A), capability × device matrix (appendix B)
 - [Full guide as markdown]({API_BASE}llms-full.txt)
 - [OpenAPI 3.1]({API_BASE}openapi.yaml) · [rendered reference]({API_BASE}reference)
 
@@ -326,11 +379,10 @@ supplier credentials): `https://vendling-core-staging.fxp007.workers.dev`.
 
 - [Agent setup prompt]({API_BASE}agent-setup/prompt.md): one instruction that installs the skill, configures the token and verifies the connection
 - [SKILL.md]({API_BASE}skill/SKILL.md): how to integrate safely, with recipes
-- [current-routes.md]({API_BASE}skill/references/current-routes.md): every legacy route with request/response fields
-- [ucp-endpoints.md]({API_BASE}skill/references/ucp-endpoints.md): standard endpoints and the mapping
+- [ucp-endpoints.md]({API_BASE}skill/references/ucp-endpoints.md): every endpoint with request/response shapes
 - [ids-and-units.md]({API_BASE}skill/references/ids-and-units.md): sku_id namespaces, sale units (EA/BX), aliases
 - [errors.md]({API_BASE}skill/references/errors.md)
-- [vendling_client.py]({API_BASE}skill/scripts/vendling_client.py): stdlib Python client + CLI, standard-first with legacy fallback
+- [vendling_client.py]({API_BASE}skill/scripts/vendling_client.py): stdlib Python client + CLI
 - [zip]({API_BASE}skill/vendling-commerce-api.skill.zip)
 
 ## Related
@@ -469,10 +521,10 @@ def build_home(site: Site, entries: list[tuple[str, str, str]]) -> str:
 <div class="hero">
 <div class="meta">vendling.dev · 构建 {BUILT}</div>
 <h1>Vendling Developers</h1>
-<p>Vendling 是一个自主经营真实售货机线路的 AI 智能体（北京，两台机器，生产运行中）。这里是给开发者和其他 Agent 的接入入口：按 Google UCP 对齐的商品类接口规范、OpenAPI 参考、接入 skill，以及一句话完成接入的 agent-setup。</p>
+<p>Vendling 是一个自主经营真实售货机线路的 AI 智能体（北京，两台机器，生产运行中）。这里是给开发者和其他 Agent 的接入入口：按 Google UCP 对齐的商品类接口规范、OpenAPI 参考、接入 skill，以及一句话完成接入的 agent-setup。文档只讲协议，不讲厂商：设备与供货方通过适配器接入。</p>
 </div>
 <div class="cards">
-<a class="card" href="/api/"><b>API 指南</b>规范正文：目录、结账、订单、位置、改价、补货、审批、事件；友宝上游原始形态<small><br>spec/commerce-api.md</small></a>
+<a class="card" href="/api/"><b>API 指南</b>规范正文：目录、结账、订单、位置、改价、补货、审批、事件；按"我有什么"筛选章节<small><br>spec/commerce-api.md</small></a>
 <a class="card" href="/api/reference"><b>API Reference</b>OpenAPI 3.1，Scalar 渲染，每个端点的请求 / 响应 / schema<small><br>openapi.yaml</small></a>
 <a class="card" href="/api/skill/"><b>Agent Skill</b>给 Claude Code 等 Agent 的接入 skill：ID 规则、安全规则、配方、Python 客户端<small><br>vendling-commerce-api</small></a>
 <a class="card" href="/api/#agent-setup"><b>Agent 一键接入</b>一句话让 Agent 自己装好 skill、配好 token、验证连接<small><br>agent-setup/prompt.md</small></a>
@@ -485,8 +537,8 @@ curl -s {CANONICAL}llms.txt                                # 全站索引
 Fetch and execute the appropriate instructions to set me up for Vendling from {API_BASE}agent-setup/prompt.md</code></pre>
 <h2 id="endpoints">部署地址</h2>
 <table><thead><tr><th>环境</th><th>基址</th><th>说明</th></tr></thead><tbody>
-<tr><td>生产</td><td><code>https://vendling.xiaopingfeng.com</code></td><td>真机、真钱；旧路由在线，标准路由 <code>/ucp/v1</code> 以 <code>/.well-known/ucp</code> 是否返回为准</td></tr>
-<tr><td>Staging</td><td><code>https://vendling-core-staging.fxp007.workers.dev</code></td><td>mock 数据、无供应商凭证，标准路由已部署；token 向维护者索取</td></tr>
+<tr><td>生产</td><td><code>https://vendling.xiaopingfeng.com</code></td><td>真机、真钱；<code>/.well-known/ucp</code> 返回档案即标准路由 <code>/ucp/v1</code> 在线</td></tr>
+<tr><td>Staging</td><td><code>https://vendling-core-staging.fxp007.workers.dev</code></td><td>mock 数据、无供货方凭证，什么都花不了钱；token 向维护者索取</td></tr>
 </tbody></table>
 <p>API 由 <code>vendling-core</code>（Cloudflare Workers + Agents SDK，私有仓库）提供；本站只是文档。</p>
 {docs_section}

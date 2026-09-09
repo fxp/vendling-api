@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Vendling Commerce API
-  version: "2026-09-09"
+  version: "2026-09-10"
   summary: UCP-aligned commerce surface of vendling-core (supplier catalog, machine inventory, purchase checkout, orders, pricing, replenishment, approvals, events).
   description: |
     Machine-readable companion to `docs/commerce-api.md`. Standard capabilities follow the
@@ -17,9 +17,9 @@ externalDocs:
   url: https://ucp.dev/2026-08-25/specification/overview/
 servers:
   - url: https://vendling.xiaopingfeng.com/ucp/v1
-    description: Production. Served by src/ucp/ once deployed; check GET /.well-known/ucp. Legacy routes (/api/youbao/*, /agents/vendling-agent/route-01/*) stay available.
+    description: Production. Check GET /.well-known/ucp for the live capability and namespace registry.
   - url: https://vendling-core-staging.fxp007.workers.dev/ucp/v1
-    description: Staging (no YOUBAO_* credentials, so nothing here can spend money)
+    description: Staging (mock data, no supplier credentials, so nothing here can spend money)
 security:
   - operatorToken: []
 tags:
@@ -28,7 +28,7 @@ tags:
   - name: catalog
     description: dev.ucp.shopping.catalog.search / lookup (+ com.xiaopingfeng.vendling.inventory, com.xiaopingfeng.vendling.sku)
   - name: sku
-    description: com.xiaopingfeng.vendling.sku — namespaced sku_id, sale units, cross-vendor aliases
+    description: com.xiaopingfeng.vendling.sku — namespace registry, namespaced sku_id, sale units, cross-vendor aliases
   - name: location
     description: dev.ucp.common.location.search / lookup (+ com.xiaopingfeng.vendling.location)
   - name: checkout
@@ -63,7 +63,7 @@ paths:
     post:
       tags: [catalog]
       operationId: searchCatalog
-      summary: Search a supplier catalog (youbao-wholesale, yuanqi) or one machine's live inventory (youbao-vm), selected by filters.namespace
+      summary: Search a supplier catalog (a supply namespace) or one machine's live inventory (a machine namespace), selected by filters.namespace
       parameters: [{ $ref: "#/components/parameters/UcpAgent" }]
       requestBody:
         required: true
@@ -128,6 +128,39 @@ paths:
                   product: { $ref: "#/components/schemas/Product" }
                   messages: { $ref: "#/components/schemas/Messages" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /namespaces:
+    get:
+      tags: [sku]
+      operationId: listNamespaces
+      summary: The vendor namespaces this deployment serves, and the defaults
+      responses:
+        "200":
+          description: Registry
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ucp, namespaces, defaults]
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  namespaces:
+                    type: array
+                    items:
+                      type: object
+                      required: [namespace, vendor, role, status, capabilities]
+                      properties:
+                        namespace: { $ref: "#/components/schemas/SkuNamespace" }
+                        vendor: { type: string }
+                        role: { type: string, enum: [supply, machine] }
+                        status: { type: string, enum: [live, planned] }
+                        capabilities: { type: array, items: { type: string } }
+                  defaults:
+                    type: object
+                    properties:
+                      machine: { $ref: "#/components/schemas/SkuNamespace" }
+                      supply: { $ref: "#/components/schemas/SkuNamespace" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /skus/{sku_id}:
     parameters: [{ $ref: "#/components/parameters/SkuIdPath" }]
@@ -510,7 +543,7 @@ paths:
                         required: [id, handler_id, type]
                         properties:
                           id: { type: string }
-                          handler_id: { type: string, enum: [youbao_account] }
+                          handler_id: { type: string, enum: [supplier_account] }
                           type: { type: string, enum: [on_account] }
                 confirm: { type: boolean, description: Must be JSON `true`. }
       responses:
@@ -841,7 +874,7 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$" }
-      description: Machine id (Youbao innerCode / vmId)
+      description: Machine id as issued by the machine platform
     SkuIdPath:
       name: sku_id
       in: path
@@ -852,7 +885,7 @@ components:
       in: path
       required: true
       schema: { type: string }
-      description: Checkout session id; doubles as the PO number and Youbao `out_trade_no`
+      description: Checkout session id; doubles as the PO number and the supplier's order reference
     RunId:
       name: id
       in: path
@@ -1025,14 +1058,15 @@ components:
     SkuNamespace:
       type: string
       description: |
-        Registered id-issuing system. One vendor may own several (Youbao's wholesale and
-        machine platforms issue unrelated numbers). `yuanqi` is reserved; no adapter exists yet.
-      enum: [youbao-wholesale, youbao-vm, yuanqi]
+        `<vendor>-<role>`, role = supply | machine. Registered at runtime: GET /namespaces or the
+        discovery document. The docs use the placeholder vendor `acme`.
+      pattern: "^[a-z][a-z0-9]*-(supply|machine)$"
+      examples: [acme-supply, acme-machine]
     SkuId:
       type: string
-      description: "`<namespace>:<vendor_sku>` — the single product identity used by every endpoint. The vendor_sku part is opaque and never parsed."
-      pattern: "^[a-z][a-z0-9-]*:[^:\\s]+$"
-      examples: ["youbao-wholesale:10023", "youbao-vm:8837", "yuanqi:E123"]
+      description: "`<vendor>-<role>:<vendor_sku>` — the single product identity used by every endpoint. The vendor_sku part is opaque and never parsed."
+      pattern: "^[a-z][a-z0-9]*-(supply|machine):[^:\\s]+$"
+      examples: ["acme-supply:10023", "acme-machine:8837"]
     QuantityUnit:
       type: object
       description: UCP sale basis. Omitted means `EA` (each) — ordering by single unit is the default.
@@ -1085,7 +1119,7 @@ components:
       type: object
       properties:
         namespace: { $ref: "#/components/schemas/SkuNamespace" }
-        location: { type: string, description: Machine id. Required when namespace=youbao-vm (the upstream queries per machine). }
+        location: { type: string, description: Machine id. Required for a machine namespace (inventory is queried per machine). }
         categories: { type: array, items: { type: string } }
         price:
           type: object
@@ -1203,7 +1237,7 @@ components:
         metadata:
           type: object
           additionalProperties: true
-          description: vendor_sku, spec, supplier_stock
+          description: vendor_sku, spec, supplier_stock (variant); sites[] (product, supply namespaces)
     Product:
       type: object
       required: [id, title, variants]
@@ -1222,7 +1256,7 @@ components:
         metadata:
           type: object
           additionalProperties: true
-          description: factory_id, factory_address (wholesale)
+          description: sites[] — supplier pickup points {id, name?, address?}
 
     MachineProfile:
       type: object
@@ -1259,7 +1293,7 @@ components:
             required: [description]
             properties: { description: { type: string } }
         online: { type: boolean, description: extension }
-        venue_name: { type: string, description: extension — Youbao nodeName }
+        venue_name: { type: string, description: extension — site name as the machine platform reports it }
         venue_type: { type: string, description: extension }
         placement: { type: string, description: extension }
         last_synced_at: { type: string, format: date-time, description: extension }
@@ -1312,13 +1346,13 @@ components:
         title: { type: string }
         description: { $ref: "#/components/schemas/Description" }
         totals: { $ref: "#/components/schemas/Totals" }
-        fulfillable_on: { type: string, format: date-time, description: Pickup slot; becomes Youbao pull_time }
+        fulfillable_on: { type: string, format: date-time, description: Pickup slot handed to the supplier adapter }
     FulfillmentMethod:
       type: object
       required: [type, line_item_ids]
       properties:
         id: { type: string }
-        type: { type: string, enum: [shipping, pickup], description: Youbao pick_up_type 1 / 2 }
+        type: { type: string, enum: [shipping, pickup], description: Supplier delivery or pickup at a supplier site }
         line_item_ids: { type: array, items: { type: string } }
         destinations: { type: array, items: { $ref: "#/components/schemas/FulfillmentDestination" } }
         selected_destination_id: { type: [string, "null"] }
@@ -1348,7 +1382,7 @@ components:
             type: object
             required: [item, quantity]
             properties:
-              item: { $ref: "#/components/schemas/ItemRef", description: Must belong to a purchasing namespace (youbao-wholesale, yuanqi); all lines in one session share a namespace }
+              item: { $ref: "#/components/schemas/ItemRef", description: Must belong to a supply namespace; all lines in one session share a namespace }
               quantity: { type: integer, minimum: 1, description: Count of `quantity_unit` }
               quantity_unit: { $ref: "#/components/schemas/QuantityUnit" }
         fulfillment: { $ref: "#/components/schemas/Fulfillment" }
@@ -1357,7 +1391,7 @@ components:
       required: [id, permalink_url]
       properties:
         id: { type: string }
-        label: { type: string, description: Youbao order_code }
+        label: { type: string, description: The supplier's own order number }
         permalink_url: { type: string, format: uri }
     Checkout:
       type: object
@@ -1462,7 +1496,7 @@ components:
       properties:
         ucp: { $ref: "#/components/schemas/UcpEnvelope" }
         id: { type: string }
-        label: { type: string, description: Youbao order_code (purchase) }
+        label: { type: string, description: The supplier's own order number (purchase) }
         kind: { type: string, enum: [purchase, sale], description: extension }
         checkout_id: { type: string }
         permalink_url: { type: string, format: uri }
@@ -1477,12 +1511,12 @@ components:
         totals: { $ref: "#/components/schemas/Totals" }
         messages: { $ref: "#/components/schemas/Messages" }
         location: { type: string, description: extension (sale) — machine id }
-        location_name: { type: string, description: extension (sale) — Youbao nodeName }
+        location_name: { type: string, description: extension (sale) — site name from the machine platform }
         trade_status: { type: string, description: extension (sale) }
         trade_status_label: { type: string, description: extension (sale) }
         supplier_status:
           type: object
-          description: extension (purchase) — raw Youbao order_status
+          description: extension (purchase) — the supplier's raw status, normalised in `mapped`
           properties:
             code: { type: integer }
             description: { type: string }

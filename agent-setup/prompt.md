@@ -11,7 +11,7 @@ Complete all of the following steps yourself by running the commands directly. D
 
 ## 1. Install the Vendling Commerce API skill
 
-The skill teaches an agent the API's identity rules (`sku_id` namespaces, single-unit ordering by default), its safety rules (two routes spend real money or change a live price and require the JSON boolean `confirm: true`), the working routes, and the standard UCP-shaped routes. Use the correct section for your agent below.
+The skill teaches an agent the API's identity rules (`sku_id` namespaces discovered at runtime, single-unit ordering by default), its safety rules (two routes spend real money or change a live price and require the JSON boolean `confirm: true`), and every standard UCP-shaped route. Use the correct section for your agent below.
 
 ### Claude Code
 
@@ -65,10 +65,10 @@ export VENDLING_BASE_URL='https://vendling-core-staging.fxp007.workers.dev'
 Run the bundled client against the roster of machines. It uses only the Python standard library:
 
 ```
-python3 ~/.claude/skills/vendling-commerce-api/scripts/vendling_client.py devices
+python3 ~/.claude/skills/vendling-commerce-api/scripts/vendling_client.py locations
 ```
 
-Expected: a JSON object with a `devices` array (two machines on the production route). A `401` means the token is wrong; a `503` means the deployment has no token configured at all.
+Expected: a JSON object with a `locations` array (two machines on the production route). A `401` means the token is wrong; a `503` means the deployment has no token configured at all; a `403` with Cloudflare error 1010 means the User-Agent was rejected (the bundled client sets one).
 
 Then read the discovery document of the standard surface:
 
@@ -76,7 +76,7 @@ Then read the discovery document of the standard surface:
 curl -fsS https://vendling.xiaopingfeng.com/.well-known/ucp | head -c 600
 ```
 
-If it returns a profile with `ucp.capabilities`, the standard `/ucp/v1/*` routes are live and the skill's recipes should prefer them. If it returns 404, only the current routes (`/api/youbao/*`, `/agents/vendling-agent/route-01/*`) are deployed; the skill's fallback table covers them.
+If it returns a profile with `ucp.capabilities`, the standard `/ucp/v1/*` routes are live; the `com.xiaopingfeng.vendling.sku` capability's `config.namespaces` lists the vendor namespaces this deployment serves. If it returns 404, that host does not serve the standard routes yet — say so rather than guessing.
 
 ---
 
@@ -89,7 +89,7 @@ Once done, tell the user:
 │  ✓ Skill    <path to vendling-commerce-api>                  │
 │  ✓ Token    VENDLING_AUTH_TOKEN set in <where>               │
 │  ✓ Base     <production or staging URL>                      │
-│  ✓ Check    devices: <n> machine(s) · /.well-known/ucp: <ok/404> │
+│  ✓ Check    locations: <n> machine(s) · /.well-known/ucp: <ok/404> │
 │                                                              │
 │  Money-moving calls always need confirm:true and your say-so │
 └──────────────────────────────────────────────────────────────┘
