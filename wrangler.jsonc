@@ -1,0 +1,21 @@
+{
+  // https://vendling.dev — the Vendling developer docs, static assets only.
+  // Built by `python3 scripts/build.py` into dist/, deployed by
+  // `npx wrangler deploy` (CI does this on every push to main). The zone
+  // vendling.dev lives in the same Cloudflare account, so the custom_domain
+  // routes get their DNS records and certificates from wrangler.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vendling-dev",
+  "account_id": "0356d59ccdcff356bf3bbdb580bbaa60",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./dist",
+    // /api/reference serves reference.html, /api/skill/ serves index.html.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "vendling.dev", "custom_domain": true },
+    { "pattern": "www.vendling.dev", "custom_domain": true }
+  ]
+}

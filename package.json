@@ -1,0 +1,16 @@
+{
+  "name": "vendling-api",
+  "version": "2026.9.9",
+  "private": true,
+  "description": "Vendling Commerce API docs — spec, OpenAPI, agent skill, agent setup — and the vendling.dev site",
+  "scripts": {
+    "build": "python3 scripts/build.py",
+    "build:mirror": "python3 scripts/build.py --mirror --out dist-mirror",
+    "deploy": "python3 scripts/build.py && wrangler deploy",
+    "lint:openapi": "redocly lint openapi/vendling-commerce.openapi.yaml"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.0.0",
+    "wrangler": "^4.0.0"
+  }
+}

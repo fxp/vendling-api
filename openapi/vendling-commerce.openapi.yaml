@@ -1,0 +1,1608 @@
+openapi: 3.1.0
+info:
+  title: Vendling Commerce API
+  version: "2026-09-09"
+  summary: UCP-aligned commerce surface of vendling-core (supplier catalog, machine inventory, purchase checkout, orders, pricing, replenishment, approvals, events).
+  description: |
+    Machine-readable companion to `docs/commerce-api.md`. Standard capabilities follow the
+    Universal Commerce Protocol (UCP) `2026-08-25`: `dev.ucp.shopping.catalog.*`,
+    `dev.ucp.shopping.checkout`, `dev.ucp.shopping.fulfillment`, `dev.ucp.shopping.order`,
+    `dev.ucp.common.location.*`. Vending-specific behaviour is exposed as
+    `com.xiaopingfeng.vendling.*` extensions. Amounts are integer CNY fen; timestamps are RFC 3339.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+externalDocs:
+  description: Universal Commerce Protocol specification
+  url: https://ucp.dev/2026-08-25/specification/overview/
+servers:
+  - url: https://vendling.xiaopingfeng.com/ucp/v1
+    description: Production. Served by src/ucp/ once deployed; check GET /.well-known/ucp. Legacy routes (/api/youbao/*, /agents/vendling-agent/route-01/*) stay available.
+  - url: https://vendling-core-staging.fxp007.workers.dev/ucp/v1
+    description: Staging (no YOUBAO_* credentials, so nothing here can spend money)
+security:
+  - operatorToken: []
+tags:
+  - name: discovery
+    description: UCP business profile
+  - name: catalog
+    description: dev.ucp.shopping.catalog.search / lookup (+ com.xiaopingfeng.vendling.inventory, com.xiaopingfeng.vendling.sku)
+  - name: sku
+    description: com.xiaopingfeng.vendling.sku — namespaced sku_id, sale units, cross-vendor aliases
+  - name: location
+    description: dev.ucp.common.location.search / lookup (+ com.xiaopingfeng.vendling.location)
+  - name: checkout
+    description: dev.ucp.shopping.checkout + dev.ucp.shopping.fulfillment (+ com.xiaopingfeng.vendling.approval)
+  - name: order
+    description: dev.ucp.shopping.order (+ com.xiaopingfeng.vendling.order)
+  - name: pricing
+    description: com.xiaopingfeng.vendling.pricing
+  - name: replenishment
+    description: com.xiaopingfeng.vendling.replenishment
+  - name: approval
+    description: com.xiaopingfeng.vendling.approval
+  - name: events
+    description: com.xiaopingfeng.vendling.events
+
+paths:
+  /.well-known/ucp:
+    get:
+      tags: [discovery]
+      operationId: getProfile
+      summary: UCP business profile (services, capabilities, payment handlers)
+      security: []
+      responses:
+        "200":
+          description: Profile document
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /catalog/search:
+    post:
+      tags: [catalog]
+      operationId: searchCatalog
+      summary: Search a supplier catalog (youbao-wholesale, yuanqi) or one machine's live inventory (youbao-vm), selected by filters.namespace
+      parameters: [{ $ref: "#/components/parameters/UcpAgent" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CatalogSearchRequest" }
+      responses:
+        "200":
+          description: Products
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/Upstream" }
+
+  /catalog/lookup:
+    post:
+      tags: [catalog]
+      operationId: lookupCatalog
+      summary: Batch lookup by sku_id (max 50); may span namespaces, dispatched by prefix
+      parameters: [{ $ref: "#/components/parameters/UcpAgent" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CatalogLookupRequest" }
+      responses:
+        "200":
+          description: Products, each variant carrying `inputs[]` correlation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502": { $ref: "#/components/responses/Upstream" }
+
+  /catalog/product:
+    post:
+      tags: [catalog]
+      operationId: getProduct
+      summary: Full detail for one product or variant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+                filters: { $ref: "#/components/schemas/CatalogFilters" }
+      responses:
+        "200":
+          description: Product
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ucp, product]
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  product: { $ref: "#/components/schemas/Product" }
+                  messages: { $ref: "#/components/schemas/Messages" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /skus/{sku_id}:
+    parameters: [{ $ref: "#/components/parameters/SkuIdPath" }]
+    get:
+      tags: [sku]
+      operationId: getSku
+      summary: Identity, barcodes, aliases and purchasable sources of one sku_id
+      responses:
+        "200":
+          description: SKU record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkuRecord" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /skus/resolve:
+    post:
+      tags: [sku]
+      operationId: resolveSkus
+      summary: Resolve sku_ids into a target namespace through confirmed aliases (barcode or manual only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, to_namespace]
+              properties:
+                ids: { type: array, items: { $ref: "#/components/schemas/SkuId" }, minItems: 1, maxItems: 50 }
+                to_namespace: { $ref: "#/components/schemas/SkuNamespace" }
+      responses:
+        "200":
+          description: "Resolved pairs; `unresolved` is not an error here (it becomes `unresolved_sku` when a run is placed)"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ucp, resolved, unresolved]
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  resolved:
+                    type: array
+                    items:
+                      type: object
+                      required: [from, to]
+                      properties:
+                        from: { $ref: "#/components/schemas/SkuId" }
+                        to: { $ref: "#/components/schemas/SkuId" }
+                  unresolved: { type: array, items: { $ref: "#/components/schemas/SkuId" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /skus/{sku_id}/aliases:
+    parameters: [{ $ref: "#/components/parameters/SkuIdPath" }]
+    put:
+      tags: [sku]
+      operationId: setSkuAliases
+      summary: Record that other sku_ids are the same physical good (manual confirmation; symmetric)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [aliases]
+              properties:
+                aliases:
+                  type: array
+                  items:
+                    type: object
+                    required: [sku_id]
+                    properties:
+                      sku_id: { $ref: "#/components/schemas/SkuId" }
+      responses:
+        "200":
+          description: Updated SKU record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkuRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /locations/search:
+    post:
+      tags: [location]
+      operationId: searchLocations
+      summary: Find machines by text, item availability or amenity
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query: { type: string }
+                filters:
+                  type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id]
+                        properties: { id: { type: string } }
+                    amenities: { type: array, items: { type: string } }
+                    hours:
+                      type: object
+                      properties: { open_at: { type: string, format: date-time } }
+                pagination: { $ref: "#/components/schemas/PaginationRequest" }
+      responses:
+        "200":
+          description: Locations
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /locations/lookup:
+    post:
+      tags: [location]
+      operationId: lookupLocations
+      summary: Retrieve machines by id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: { type: array, items: { type: string }, maxItems: 50 }
+      responses:
+        "200":
+          description: Locations
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /locations/sync:
+    post:
+      tags: [location]
+      operationId: syncLocations
+      summary: Pull live inventory + sales for every registered machine now (extension)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sales_window_days: { type: integer, minimum: 21, default: 30 }
+      responses:
+        "200":
+          description: Sync summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  locations: { type: integer }
+                  products: { type: integer }
+                  slots: { type: integer }
+                  sales: { type: integer }
+                  messages: { $ref: "#/components/schemas/Messages" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /locations/{id}:
+    parameters: [{ $ref: "#/components/parameters/LocationId" }]
+    put:
+      tags: [location]
+      operationId: registerLocation
+      summary: Register or update a machine (device roster + physical profile)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                profile: { $ref: "#/components/schemas/MachineProfile" }
+      responses:
+        "200":
+          description: Location
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  location: { $ref: "#/components/schemas/Location" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [location]
+      operationId: removeLocation
+      summary: Remove a machine from the roster (profile/context/telemetry purged; events and chat history kept)
+      responses:
+        "200":
+          description: Removal report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  removed: { type: string }
+                  purged:
+                    type: object
+                    properties:
+                      profile: { type: integer }
+                      context: { type: integer }
+                      telemetry: { type: integer }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /locations/{id}/prices:
+    parameters: [{ $ref: "#/components/parameters/LocationId" }]
+    put:
+      tags: [pricing]
+      operationId: updatePrices
+      summary: Change live customer-facing prices on a machine (real write; confirm + kill switch + price cap)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prices, confirm]
+              properties:
+                prices:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [item, price]
+                    properties:
+                      item: { $ref: "#/components/schemas/ItemRef" }
+                      price: { $ref: "#/components/schemas/Price" }
+                confirm:
+                  type: boolean
+                  description: Must be JSON `true`. Strings and numbers are rejected with `confirmation_required`.
+      responses:
+        "200":
+          description: Applied, or `approval_required` when a move exceeds `priceCapPerItem`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  location: { type: string }
+                  updated:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item: { $ref: "#/components/schemas/ItemRef" }
+                        previous: { $ref: "#/components/schemas/Price" }
+                        price: { $ref: "#/components/schemas/Price" }
+                  messages: { $ref: "#/components/schemas/Messages" }
+                  actions: { $ref: "#/components/schemas/Actions" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/KillSwitch" }
+        "502": { $ref: "#/components/responses/Upstream" }
+        "503": { $ref: "#/components/responses/GuardUnverifiable" }
+
+  /locations/{id}/restock-recommendations:
+    parameters: [{ $ref: "#/components/parameters/LocationId" }]
+    post:
+      tags: [replenishment]
+      operationId: recommendRestock
+      summary: Push a restock recommendation into the supplier's own ops queue (no money; kill switch applies)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference, line_items]
+              properties:
+                reference: { type: string, description: Supplier wholesale number (`wholesaleNo`) }
+                line_items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [item, quantity, reason]
+                    properties:
+                      item: { $ref: "#/components/schemas/ItemRef" }
+                      quantity: { type: integer, minimum: 1 }
+                      reason: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: Accepted count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  location: { type: string }
+                  reference: { type: string }
+                  accepted: { type: integer }
+        "409": { $ref: "#/components/responses/KillSwitch" }
+        "502": { $ref: "#/components/responses/Upstream" }
+
+  /checkout-sessions:
+    post:
+      tags: [checkout]
+      operationId: createCheckout
+      summary: Open a wholesale purchase-order session (nothing is spent until /complete)
+      parameters:
+        - { $ref: "#/components/parameters/UcpAgent" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutCreateRequest" }
+      responses:
+        "201":
+          description: Session created (status usually `incomplete` or `requires_escalation`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Checkout" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /checkout-sessions/{id}:
+    parameters: [{ $ref: "#/components/parameters/CheckoutId" }]
+    get:
+      tags: [checkout]
+      operationId: getCheckout
+      summary: Current state of a purchase-order session
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Checkout" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [checkout]
+      operationId: updateCheckout
+      summary: Add or change line items and fulfillment details
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutCreateRequest" }
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Checkout" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /checkout-sessions/{id}/complete:
+    parameters: [{ $ref: "#/components/parameters/CheckoutId" }]
+    post:
+      tags: [checkout]
+      operationId: completeCheckout
+      summary: Place the real wholesale order (spends money; confirm + kill switch + budget guard)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                payment:
+                  type: object
+                  properties:
+                    instruments:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, handler_id, type]
+                        properties:
+                          id: { type: string }
+                          handler_id: { type: string, enum: [youbao_account] }
+                          type: { type: string, enum: [on_account] }
+                confirm: { type: boolean, description: Must be JSON `true`. }
+      responses:
+        "200":
+          description: "Session with `status: completed` and `order`, or the unchanged session plus a message (`kill_switch_engaged`, `supplier_rejected`, `approval_required`)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Checkout" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/KillSwitch" }
+        "502": { $ref: "#/components/responses/Upstream" }
+        "503": { $ref: "#/components/responses/GuardUnverifiable" }
+
+  /checkout-sessions/{id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/CheckoutId" }]
+    post:
+      tags: [checkout]
+      operationId: cancelCheckout
+      summary: Cancel a session (no supplier call is made)
+      responses:
+        "200":
+          description: "Session with `status: canceled`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Checkout" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /orders:
+    get:
+      tags: [order]
+      operationId: listOrders
+      summary: List orders (extension). `kind=sale` reads the machine transaction ledger.
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [sale, purchase], default: sale } }
+        - { name: location, in: query, schema: { type: string }, description: Machine id (client-side filter; the upstream ledger is account-wide) }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: trade_status, in: query, schema: { type: string, default: TRADE_SUCCESS_MANUAL }, description: "`all` for every status" }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 100 } }
+      responses:
+        "200":
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ucp, orders]
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  orders: { type: array, items: { $ref: "#/components/schemas/Order" } }
+                  pagination: { $ref: "#/components/schemas/PaginationResponse" }
+                  messages: { $ref: "#/components/schemas/Messages" }
+        "502": { $ref: "#/components/responses/Upstream" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /orders/{id}:
+    get:
+      tags: [order]
+      operationId: getOrder
+      summary: Current-state snapshot of a purchase order (supplier logistics) or a machine sale
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/UcpAgent" }
+      responses:
+        "200":
+          description: "Order snapshot (UCP also permits HTTP 200 + an error envelope with `not_found`)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /replenishment/plan:
+    get:
+      tags: [replenishment]
+      operationId: getReplenishmentPlan
+      summary: What the strategy would order right now, per slot, with provenance
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplenishmentPlan" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /replenishment/runs:
+    get:
+      tags: [replenishment]
+      operationId: listRuns
+      summary: List replenishment runs, optionally by status
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/RunStatus" } }
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  runs: { type: array, items: { $ref: "#/components/schemas/ReplenishmentRun" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [replenishment]
+      operationId: createRun
+      summary: Build a run from the current plan (may create a pending approval)
+      responses:
+        "201":
+          description: Run
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplenishmentRun" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /replenishment/runs/{id}:
+    parameters: [{ $ref: "#/components/parameters/RunId" }]
+    get:
+      tags: [replenishment]
+      operationId: getRun
+      summary: One replenishment run
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplenishmentRun" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /replenishment/runs/{id}/place:
+    parameters: [{ $ref: "#/components/parameters/RunId" }]
+    post:
+      tags: [replenishment]
+      operationId: placeRun
+      summary: Hand the run's items to the supplier (simulated today; a real supplier becomes a checkout session)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200":
+          description: "Run with `status: placed`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplenishmentRun" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /replenishment/runs/{id}/receive:
+    parameters: [{ $ref: "#/components/parameters/RunId" }]
+    post:
+      tags: [replenishment]
+      operationId: receiveRun
+      summary: Confirm delivery; stock goes back up (capped at capacity when known)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delivered]
+              properties:
+                delivered:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [slot_id, quantity]
+                    properties:
+                      slot_id: { type: string }
+                      quantity: { type: integer, minimum: 0 }
+                note: { type: string }
+      responses:
+        "200":
+          description: "Run with `status: delivered`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplenishmentRun" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /replenishment/score:
+    get:
+      tags: [replenishment]
+      operationId: scoreForecasts
+      summary: How well past restock forecasts held up
+      parameters:
+        - { name: horizon_days, in: query, schema: { type: integer, default: 7 } }
+      responses:
+        "200":
+          description: Forecast accuracy report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  horizon_days: { type: integer }
+                  total_forecasts: { type: integer }
+                  pending: { type: integer, description: Forecasts too young to score — reported loudly because 0 scored and 0 errors look identical }
+                  reports: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /approvals:
+    get:
+      tags: [approval]
+      operationId: listApprovals
+      summary: Decisions awaiting (or past) owner approval
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected], default: pending } }
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/DecisionKind" } }
+      responses:
+        "200":
+          description: Approvals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  approvals: { type: array, items: { $ref: "#/components/schemas/Approval" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /approvals/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [approval]
+      operationId: getApproval
+      summary: One approval
+      responses:
+        "200":
+          description: Approval
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Approval" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [approval]
+      operationId: resolveApproval
+      summary: Approve or reject. A Feishu resolver must be a registered admin in a registered admin chat.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              properties:
+                approved: { type: boolean }
+                resolver:
+                  type: object
+                  properties:
+                    channel: { type: string, enum: [feishu, dashboard] }
+                    chat_id: { type: string }
+                    sender_id: { type: string }
+      responses:
+        "200":
+          description: Resolved approval
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Approval" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /events:
+    get:
+      tags: [events]
+      operationId: listEvents
+      summary: Recent events, newest first
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+        - { name: location, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [events]
+      operationId: appendEvent
+      summary: Report something that happened (no dedup — idempotency is the producer's job)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, summary, reasoning]
+              properties:
+                kind: { type: string }
+                summary: { type: string }
+                reasoning: { type: string }
+                location: { type: string }
+      responses:
+        "201":
+          description: Stored event with id and occurred_at
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+components:
+  securitySchemes:
+    operatorToken:
+      type: http
+      scheme: bearer
+      description: VENDLING_AUTH_TOKEN (or the `vendling_auth` session cookie). One token, full access.
+
+  parameters:
+    UcpAgent:
+      name: UCP-Agent
+      in: header
+      required: false
+      schema: { type: string }
+      description: 'RFC 8941 dictionary, e.g. profile="https://platform.example/.well-known/ucp". Recorded, not yet verified.'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string }
+    LocationId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$" }
+      description: Machine id (Youbao innerCode / vmId)
+    SkuIdPath:
+      name: sku_id
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/SkuId" }
+    CheckoutId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Checkout session id; doubles as the PO number and Youbao `out_trade_no`
+    RunId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Validation failure (`missing`, `invalid`, `namespace_mismatch`, `confirmation_required`, `request_too_large`)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: Missing or wrong operator token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Resolver is not an admin
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: not_found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: State conflict (`already_placed`, `already_delivered`, `approval_required`, idempotency mismatch)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    KillSwitch:
+      description: kill_switch_engaged — real writes are frozen
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Upstream:
+      description: supplier_rejected / upstream_unreachable
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    GuardUnverifiable:
+      description: guard_unverifiable — rules could not be read, so the write is refused
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    UcpEnvelope:
+      type: object
+      required: [version]
+      properties:
+        version: { type: string, example: "2026-08-25" }
+        status: { type: string, enum: [success, error] }
+        capabilities:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              properties:
+                version: { type: string }
+        payment_handlers:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: object, additionalProperties: true }
+
+    Profile:
+      type: object
+      required: [ucp]
+      properties:
+        ucp:
+          type: object
+          required: [version, services, payment_handlers]
+          properties:
+            version: { type: string }
+            services: { type: object, additionalProperties: true }
+            capabilities: { type: object, additionalProperties: true }
+            payment_handlers: { type: object, additionalProperties: true }
+        keys: { type: array, items: { type: object, additionalProperties: true } }
+
+    Message:
+      type: object
+      required: [type, code, content]
+      properties:
+        type: { type: string, enum: [error, warning, info] }
+        code:
+          type: string
+          description: Standard UCP codes plus vendling extensions
+          examples: [missing, invalid, not_found, unauthorized, out_of_stock, item_unavailable, request_too_large, namespace_mismatch, namespace_unsupported, unresolved_sku, hard_no_go, approval_rejected, expired, confirmation_required, approval_required, kill_switch_engaged, guard_unverifiable, supplier_rejected, upstream_unreachable, already_placed, already_delivered, simulation_disabled, price_estimated, location_unverified, history_truncated, hours_unknown, sync_problem, same_namespace]
+        severity: { type: string, enum: [recoverable, requires_buyer_input, requires_buyer_review, unrecoverable] }
+        path: { type: string, description: RFC 9535 JSONPath }
+        content: { type: string }
+        content_type: { type: string, enum: [plain, markdown], default: plain }
+    Messages:
+      type: array
+      items: { $ref: "#/components/schemas/Message" }
+    ErrorResponse:
+      type: object
+      required: [ucp, messages]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        messages: { $ref: "#/components/schemas/Messages" }
+        continue_url: { type: string, format: uri }
+    Actions:
+      type: object
+      description: Outstanding extension-defined actions keyed by reverse-domain type (e.g. com.xiaopingfeng.vendling.approval)
+      additionalProperties:
+        type: array
+        items:
+          type: object
+          required: [id]
+          properties:
+            id: { type: string }
+            config: { type: object, additionalProperties: true }
+
+    Amount:
+      type: integer
+      description: CNY fen (ISO 4217 minor units)
+    Price:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { $ref: "#/components/schemas/Amount" }
+        currency: { type: string, enum: [CNY] }
+    Total:
+      type: object
+      required: [type, amount]
+      properties:
+        type: { type: string, examples: [subtotal, discount, fulfillment, tax, fee, total] }
+        amount: { type: integer, description: Signed fen }
+        display_text: { type: string }
+    Totals:
+      type: array
+      items: { $ref: "#/components/schemas/Total" }
+    Link:
+      type: object
+      required: [type, url]
+      properties:
+        type: { type: string }
+        url: { type: string, format: uri }
+        title: { type: string }
+    PostalAddress:
+      type: object
+      properties:
+        street_address: { type: string }
+        extended_address: { type: string }
+        address_locality: { type: string }
+        address_region: { type: string }
+        address_country: { type: string, example: CN }
+        postal_code: { type: string }
+        first_name: { type: string }
+        last_name: { type: string }
+        phone_number: { type: string }
+    PaginationRequest:
+      type: object
+      properties:
+        cursor: { type: string }
+        limit: { type: integer, default: 20 }
+    PaginationResponse:
+      type: object
+      required: [has_next_page]
+      properties:
+        cursor: { type: string }
+        has_next_page: { type: boolean }
+        total_count: { type: integer }
+
+    SkuNamespace:
+      type: string
+      description: |
+        Registered id-issuing system. One vendor may own several (Youbao's wholesale and
+        machine platforms issue unrelated numbers). `yuanqi` is reserved; no adapter exists yet.
+      enum: [youbao-wholesale, youbao-vm, yuanqi]
+    SkuId:
+      type: string
+      description: "`<namespace>:<vendor_sku>` — the single product identity used by every endpoint. The vendor_sku part is opaque and never parsed."
+      pattern: "^[a-z][a-z0-9-]*:[^:\\s]+$"
+      examples: ["youbao-wholesale:10023", "youbao-vm:8837", "yuanqi:E123"]
+    QuantityUnit:
+      type: object
+      description: UCP sale basis. Omitted means `EA` (each) — ordering by single unit is the default.
+      required: [unit]
+      properties:
+        unit: { type: string, enum: [EA, BX], description: "UN/ECE Rec 20 code: EA each, BX box" }
+        display_text: { type: string }
+        increment: { type: integer, minimum: 1, default: 1 }
+        contains: { type: integer, minimum: 1, description: Units of EA inside one of this unit (extension; omitted for EA) }
+    SaleUnit:
+      allOf:
+        - { $ref: "#/components/schemas/QuantityUnit" }
+        - type: object
+          required: [price]
+          properties:
+            price: { $ref: "#/components/schemas/Price" }
+            price_derived: { type: boolean, description: Price computed from another unit (each = box ÷ contains); settlement follows the supplier statement }
+    Alias:
+      type: object
+      required: [sku_id, source]
+      properties:
+        sku_id: { $ref: "#/components/schemas/SkuId" }
+        source: { type: string, enum: [barcode, manual, suggested], description: Only barcode and manual aliases may be used to place orders }
+        confirmed_at: { type: [string, "null"], format: date-time }
+    SkuRecord:
+      type: object
+      required: [ucp, sku_id, namespace, vendor_sku]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        sku_id: { $ref: "#/components/schemas/SkuId" }
+        namespace: { $ref: "#/components/schemas/SkuNamespace" }
+        vendor_sku: { type: string }
+        title: { type: string }
+        barcodes:
+          type: array
+          items:
+            type: object
+            required: [type, value]
+            properties: { type: { type: string }, value: { type: string } }
+        aliases: { type: array, items: { $ref: "#/components/schemas/Alias" } }
+        purchasable_from:
+          type: array
+          items:
+            type: object
+            properties:
+              sku_id: { $ref: "#/components/schemas/SkuId" }
+              title: { type: string }
+              sale_units: { type: array, items: { $ref: "#/components/schemas/SaleUnit" } }
+    CatalogFilters:
+      type: object
+      properties:
+        namespace: { $ref: "#/components/schemas/SkuNamespace" }
+        location: { type: string, description: Machine id. Required when namespace=youbao-vm (the upstream queries per machine). }
+        categories: { type: array, items: { type: string } }
+        price:
+          type: object
+          properties:
+            min: { $ref: "#/components/schemas/Amount" }
+            max: { $ref: "#/components/schemas/Amount" }
+    CatalogSearchRequest:
+      type: object
+      properties:
+        query: { type: string, description: Client-side substring match on brand+name; the supplier endpoint has no server-side search }
+        filters: { $ref: "#/components/schemas/CatalogFilters" }
+        context:
+          type: object
+          properties:
+            language: { type: string }
+            currency: { type: string }
+        pagination: { $ref: "#/components/schemas/PaginationRequest" }
+    CatalogLookupRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids: { type: array, items: { type: string }, minItems: 1, maxItems: 50 }
+        filters: { $ref: "#/components/schemas/CatalogFilters" }
+    CatalogResponse:
+      type: object
+      required: [ucp, products]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        products: { type: array, items: { $ref: "#/components/schemas/Product" } }
+        pagination: { $ref: "#/components/schemas/PaginationResponse" }
+        messages: { $ref: "#/components/schemas/Messages" }
+    Description:
+      type: object
+      properties:
+        plain: { type: string }
+        markdown: { type: string }
+    Media:
+      type: object
+      required: [type, url]
+      properties:
+        type: { type: string, enum: [image, video, model_3d] }
+        url: { type: string, format: uri }
+        alt_text: { type: string }
+    Category:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string }
+        taxonomy: { type: string, example: merchant }
+    Availability:
+      type: object
+      properties:
+        available: { type: boolean }
+        status: { type: string, enum: [in_stock, out_of_stock, backorder, preorder, discontinued] }
+    UnitPrice:
+      type: object
+      description: Price per single unit inside a pack (UCP unit_price; unit EA = each)
+      properties:
+        amount: { $ref: "#/components/schemas/Amount" }
+        currency: { type: string, enum: [CNY] }
+        measure:
+          type: object
+          properties: { value: { type: integer }, unit: { type: string, example: EA }, display_text: { type: string } }
+        reference:
+          type: object
+          properties: { value: { type: integer }, unit: { type: string, example: EA }, display_text: { type: string } }
+    Inventory:
+      type: object
+      description: com.xiaopingfeng.vendling.inventory — live slot data for one machine
+      required: [location, slot_id, stock]
+      properties:
+        location: { type: string }
+        slot_id: { type: string, description: "<vmId>-<productId>; a stand-in, not a physical lane number" }
+        stock: { type: integer }
+        capacity: { type: [integer, "null"], description: Only when counted on site or observed; never defaulted }
+        locked: { type: boolean }
+    Variant:
+      type: object
+      required: [id, title, price]
+      properties:
+        id: { $ref: "#/components/schemas/SkuId" }
+        sku: { type: string }
+        barcodes:
+          type: array
+          items:
+            type: object
+            required: [type, value]
+            properties:
+              type: { type: string, example: EAN }
+              value: { type: string }
+        title: { type: string }
+        description: { $ref: "#/components/schemas/Description" }
+        price: { $ref: "#/components/schemas/Price", description: Always the EA (each) price, so UCP clients unaware of sale_units order by single unit correctly }
+        quantity_unit: { $ref: "#/components/schemas/QuantityUnit" }
+        sale_units:
+          type: array
+          description: Every unit this variant can be ordered in (extension). Absent means EA only.
+          items: { $ref: "#/components/schemas/SaleUnit" }
+        unit_price: { $ref: "#/components/schemas/UnitPrice" }
+        availability: { $ref: "#/components/schemas/Availability" }
+        media: { type: array, items: { $ref: "#/components/schemas/Media" } }
+        inventory: { $ref: "#/components/schemas/Inventory" }
+        aliases:
+          type: array
+          description: The same physical good in other namespaces (extension); the only bridge from a machine slot to a purchasable SKU
+          items: { $ref: "#/components/schemas/Alias" }
+        inputs:
+          type: array
+          description: Lookup correlation — which request ids resolved to this variant
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              match: { type: string, enum: [exact, featured] }
+        metadata:
+          type: object
+          additionalProperties: true
+          description: vendor_sku, spec, supplier_stock
+    Product:
+      type: object
+      required: [id, title, variants]
+      properties:
+        id: { $ref: "#/components/schemas/SkuId" }
+        title: { type: string }
+        description: { $ref: "#/components/schemas/Description" }
+        categories: { type: array, items: { $ref: "#/components/schemas/Category" } }
+        media: { type: array, items: { $ref: "#/components/schemas/Media" } }
+        price_range:
+          type: object
+          properties:
+            min: { $ref: "#/components/schemas/Price" }
+            max: { $ref: "#/components/schemas/Price" }
+        variants: { type: array, items: { $ref: "#/components/schemas/Variant" } }
+        metadata:
+          type: object
+          additionalProperties: true
+          description: factory_id, factory_address (wholesale)
+
+    MachineProfile:
+      type: object
+      properties:
+        city: { type: string }
+        address: { type: string }
+        placement: { type: string, enum: [indoor, outdoor, semi_outdoor] }
+        venueType: { type: string, enum: [office, gym, hospital, campus, transit, residential, retail, other] }
+        floor: { type: string }
+        spot: { type: string }
+        notes: { type: string }
+    Location:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { $ref: "#/components/schemas/PostalAddress" }
+        timezone: { type: string, example: Asia/Shanghai }
+        hours:
+          type: array
+          description: Omitted when unknown — UCP treats absence as unknown, not closed
+          items:
+            type: object
+            required: [day, opens, closes]
+            properties:
+              day: { type: string, enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday] }
+              opens: { type: string, example: "08:00" }
+              closes: { type: string, example: "21:00" }
+        amenities:
+          type: object
+          additionalProperties:
+            type: object
+            required: [description]
+            properties: { description: { type: string } }
+        online: { type: boolean, description: extension }
+        venue_name: { type: string, description: extension — Youbao nodeName }
+        venue_type: { type: string, description: extension }
+        placement: { type: string, description: extension }
+        last_synced_at: { type: string, format: date-time, description: extension }
+        profile_complete: { type: boolean, description: extension }
+        missing: { type: array, items: { type: string }, description: extension }
+    LocationsResponse:
+      type: object
+      required: [ucp, locations]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        locations: { type: array, items: { $ref: "#/components/schemas/Location" } }
+        pagination: { $ref: "#/components/schemas/PaginationResponse" }
+        messages: { $ref: "#/components/schemas/Messages" }
+
+    ItemRef:
+      type: object
+      required: [id]
+      properties:
+        id: { $ref: "#/components/schemas/SkuId" }
+    Item:
+      type: object
+      required: [id, title, price]
+      properties:
+        id: { $ref: "#/components/schemas/SkuId" }
+        title: { type: string }
+        price: { $ref: "#/components/schemas/Amount", description: Price of one `quantity_unit` (box price on a BX line, unit price on an EA line) }
+        quantity_unit: { $ref: "#/components/schemas/QuantityUnit" }
+        image_url: { type: string, format: uri }
+    LineItem:
+      type: object
+      required: [id, item, quantity, totals]
+      properties:
+        id: { type: string }
+        item: { $ref: "#/components/schemas/Item" }
+        quantity: { type: integer, minimum: 1 }
+        totals: { $ref: "#/components/schemas/Totals" }
+    FulfillmentDestination:
+      allOf:
+        - { $ref: "#/components/schemas/PostalAddress" }
+        - type: object
+          properties:
+            type: { type: string, enum: [shipping_address, business_location] }
+            id: { type: string }
+            name: { type: string }
+    FulfillmentOption:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { $ref: "#/components/schemas/Description" }
+        totals: { $ref: "#/components/schemas/Totals" }
+        fulfillable_on: { type: string, format: date-time, description: Pickup slot; becomes Youbao pull_time }
+    FulfillmentMethod:
+      type: object
+      required: [type, line_item_ids]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [shipping, pickup], description: Youbao pick_up_type 1 / 2 }
+        line_item_ids: { type: array, items: { type: string } }
+        destinations: { type: array, items: { $ref: "#/components/schemas/FulfillmentDestination" } }
+        selected_destination_id: { type: [string, "null"] }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [id, line_item_ids]
+            properties:
+              id: { type: string }
+              line_item_ids: { type: array, items: { type: string } }
+              options: { type: array, items: { $ref: "#/components/schemas/FulfillmentOption" } }
+              selected_option_id: { type: [string, "null"] }
+    Fulfillment:
+      type: object
+      properties:
+        methods: { type: array, items: { $ref: "#/components/schemas/FulfillmentMethod" } }
+    CheckoutCreateRequest:
+      type: object
+      required: [line_items]
+      properties:
+        id: { type: string, description: Optional PO number; generated as po_<yyyymmdd>_<seq> when absent }
+        line_items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [item, quantity]
+            properties:
+              item: { $ref: "#/components/schemas/ItemRef", description: Must belong to a purchasing namespace (youbao-wholesale, yuanqi); all lines in one session share a namespace }
+              quantity: { type: integer, minimum: 1, description: Count of `quantity_unit` }
+              quantity_unit: { $ref: "#/components/schemas/QuantityUnit" }
+        fulfillment: { $ref: "#/components/schemas/Fulfillment" }
+    OrderConfirmation:
+      type: object
+      required: [id, permalink_url]
+      properties:
+        id: { type: string }
+        label: { type: string, description: Youbao order_code }
+        permalink_url: { type: string, format: uri }
+    Checkout:
+      type: object
+      required: [ucp, id, status, currency, line_items, totals, links]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        id: { type: string }
+        status:
+          type: string
+          enum: [incomplete, requires_escalation, ready_for_complete, complete_in_progress, completed, canceled]
+        currency: { type: string, enum: [CNY] }
+        vendor: { $ref: "#/components/schemas/SkuNamespace", description: Purchasing namespace of this session (extension); fixed at creation }
+        line_items: { type: array, items: { $ref: "#/components/schemas/LineItem" } }
+        fulfillment: { $ref: "#/components/schemas/Fulfillment" }
+        totals: { $ref: "#/components/schemas/Totals" }
+        payment:
+          type: object
+          properties:
+            instruments:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  handler_id: { type: string }
+                  type: { type: string, enum: [on_account] }
+                  selected: { type: boolean }
+                  display: { type: object, additionalProperties: true }
+        messages: { $ref: "#/components/schemas/Messages" }
+        actions: { $ref: "#/components/schemas/Actions" }
+        links: { type: array, items: { $ref: "#/components/schemas/Link" } }
+        continue_url: { type: string, format: uri }
+        expires_at: { type: string, format: date-time }
+        order: { $ref: "#/components/schemas/OrderConfirmation" }
+
+    OrderLineItem:
+      type: object
+      required: [id, item, quantity, totals, status]
+      properties:
+        id: { type: string }
+        item: { $ref: "#/components/schemas/Item" }
+        quantity:
+          type: object
+          required: [total, fulfilled]
+          properties:
+            original: { type: integer }
+            total: { type: integer }
+            fulfilled: { type: integer }
+        totals: { $ref: "#/components/schemas/Totals" }
+        status: { type: string, enum: [processing, partial, fulfilled, removed] }
+    Expectation:
+      type: object
+      required: [id, line_items, method_type, destination]
+      properties:
+        id: { type: string }
+        line_items:
+          type: array
+          items:
+            type: object
+            required: [id, quantity]
+            properties: { id: { type: string }, quantity: { type: integer } }
+        method_type: { type: string, examples: [shipping, pickup, vending_dispense, operator_visit] }
+        destination: { $ref: "#/components/schemas/PostalAddress" }
+        description: { type: string }
+        fulfillable_on: { type: string, format: date-time }
+    FulfillmentEvent:
+      type: object
+      required: [id, occurred_at, type, line_items]
+      properties:
+        id: { type: string }
+        occurred_at: { type: string, format: date-time }
+        type: { type: string, examples: [processing, shipped, delivered, canceled, dispensed, planned, approved, ordered] }
+        line_items:
+          type: array
+          items:
+            type: object
+            required: [id, quantity]
+            properties: { id: { type: string }, quantity: { type: integer } }
+        tracking_number: { type: string }
+        tracking_url: { type: string, format: uri }
+        carrier: { type: string }
+        description: { type: string }
+    Adjustment:
+      type: object
+      required: [id, type, occurred_at, status]
+      properties:
+        id: { type: string }
+        type: { type: string, examples: [refund, cancellation, price_adjustment] }
+        occurred_at: { type: string, format: date-time }
+        status: { type: string, enum: [pending, completed, failed] }
+        line_items:
+          type: array
+          items:
+            type: object
+            required: [id, quantity]
+            properties: { id: { type: string }, quantity: { type: integer, description: Signed step count } }
+        totals: { $ref: "#/components/schemas/Totals" }
+        description: { type: string }
+    Order:
+      type: object
+      required: [ucp, id, checkout_id, permalink_url, currency, line_items, fulfillment, totals]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        id: { type: string }
+        label: { type: string, description: Youbao order_code (purchase) }
+        kind: { type: string, enum: [purchase, sale], description: extension }
+        checkout_id: { type: string }
+        permalink_url: { type: string, format: uri }
+        currency: { type: string, enum: [CNY] }
+        line_items: { type: array, items: { $ref: "#/components/schemas/OrderLineItem" } }
+        fulfillment:
+          type: object
+          properties:
+            expectations: { type: array, items: { $ref: "#/components/schemas/Expectation" } }
+            events: { type: array, items: { $ref: "#/components/schemas/FulfillmentEvent" } }
+        adjustments: { type: array, items: { $ref: "#/components/schemas/Adjustment" } }
+        totals: { $ref: "#/components/schemas/Totals" }
+        messages: { $ref: "#/components/schemas/Messages" }
+        location: { type: string, description: extension (sale) — machine id }
+        location_name: { type: string, description: extension (sale) — Youbao nodeName }
+        trade_status: { type: string, description: extension (sale) }
+        trade_status_label: { type: string, description: extension (sale) }
+        supplier_status:
+          type: object
+          description: extension (purchase) — raw Youbao order_status
+          properties:
+            code: { type: integer }
+            description: { type: string }
+            mapped: { type: string, enum: [ordered, arrived, cancelled] }
+        logistics: { type: array, items: { type: object, additionalProperties: true }, description: extension (purchase) — passthrough }
+
+    ReplenishmentPlan:
+      type: object
+      required: [ucp, strategy_version, plans]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        strategy_version: { type: string, example: v2-weekshape }
+        params: { type: object, additionalProperties: true }
+        lead_time:
+          type: object
+          properties:
+            days: { type: number }
+            source: { type: string, enum: [measured, stated] }
+            samples: { type: integer }
+        stock_history_points: { type: integer }
+        measured_slots: { type: integer }
+        plans:
+          type: array
+          items:
+            type: object
+            properties:
+              slot_id: { type: string }
+              location: { type: string }
+              item: { $ref: "#/components/schemas/ItemRef" }
+              stock: { type: integer }
+              demand:
+                type: object
+                properties:
+                  daily_rate: { type: number }
+                  naive_daily_rate: { type: number }
+                  available_days: { type: number }
+                  empty_days: { type: number }
+                  closed_days: { type: number }
+                  measured: { type: boolean }
+              days_of_cover: { type: number }
+              stockout_at: { type: [string, "null"], format: date-time }
+              recommendation:
+                type: object
+                properties:
+                  action: { type: string, enum: [order, hold, dead_stock] }
+                  quantity: { type: integer }
+    RunStatus:
+      type: string
+      enum: [blocked, nothing_to_do, pending_approval, rejected, approved, placed, delivered]
+    ReplenishmentRun:
+      type: object
+      required: [ucp, id, status, currency, line_items, fulfillment, totals]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        id: { type: string }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        week_of: { type: string, format: date }
+        currency: { type: string, enum: [CNY] }
+        line_items:
+          type: array
+          items:
+            allOf:
+              - { $ref: "#/components/schemas/OrderLineItem" }
+              - type: object
+                properties:
+                  location: { type: string }
+                  source:
+                    type: object
+                    description: Resolved purchasable SKU for this machine item (via /skus/resolve); missing → unresolved_sku on place
+                    properties:
+                      sku_id: { $ref: "#/components/schemas/SkuId" }
+                      quantity_unit: { $ref: "#/components/schemas/QuantityUnit" }
+        fulfillment:
+          type: object
+          properties:
+            expectations: { type: array, items: { $ref: "#/components/schemas/Expectation" } }
+            events: { type: array, items: { $ref: "#/components/schemas/FulfillmentEvent" } }
+        totals: { $ref: "#/components/schemas/Totals" }
+        estimated_minutes: { type: integer }
+        cost_is_estimated: { type: boolean, description: True when any line lacks a real wholesale cost (retail × 0.55 assumed) }
+        approval:
+          type: object
+          properties:
+            required: { type: boolean }
+            id: { type: string }
+            approved: { type: [boolean, "null"] }
+        checkout_id: { type: string, description: Set once a real supplier checkout backs this run }
+        placed_at: { type: [string, "null"], format: date-time }
+        delivered_at: { type: [string, "null"], format: date-time }
+        messages: { $ref: "#/components/schemas/Messages" }
+
+    DecisionKind:
+      type: string
+      enum: [swap, price_change, fault_flag, restock_plan, note]
+    Approval:
+      type: object
+      required: [id, kind, at, summary, status, approved]
+      properties:
+        ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+        id: { type: string }
+        kind: { $ref: "#/components/schemas/DecisionKind" }
+        at: { type: string, format: date-time }
+        summary: { type: string }
+        reasoning: { type: string }
+        location: { type: string }
+        subject:
+          type: object
+          properties:
+            type: { type: string, enum: [replenishment_run, checkout, price_change, slot] }
+            id: { type: string }
+        status: { type: string, enum: [pending, approved, rejected] }
+        approved: { type: [boolean, "null"] }
+
+    Event:
+      type: object
+      required: [id, occurred_at, kind, summary, reasoning]
+      properties:
+        id: { type: string }
+        occurred_at: { type: string, format: date-time, description: "When it happened, not when it was stored" }
+        kind: { type: string }
+        summary: { type: string }
+        reasoning: { type: string }
+        location: { type: string }
