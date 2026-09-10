@@ -23,6 +23,24 @@ Namespaces are `<vendor>-supply` / `<vendor>-machine`; the docs use the placehol
 | `com.xiaopingfeng.vendling.approval` | `GET /approvals?status=pending\|approved\|rejected\|all&kind=` · `GET /approvals/{id}` · `POST /approvals/{id} {approved, resolver?}` | approving a parked price change executes it |
 | `com.xiaopingfeng.vendling.events` | `GET /events?limit=&location=&kind=` · `POST /events {kind, summary, reasoning, location?}` · WebSocket at `websocket_url` | no dedup on POST |
 
+## Core set (★)
+
+The route runs day to day on these 13 operations; wire them first and treat the rest as convenience:
+
+| ★ | Operation | Why it is essential | How Vendling itself exercises it |
+|---|---|---|---|
+| ★ | `GET /.well-known/ucp` | entry point: version, capabilities, namespaces | every external agent starts here |
+| ★ | `GET /namespaces` | you cannot form a `sku_id` without it | same |
+| ★ | `POST /locations/search` | which machines exist | dashboard roster |
+| ★ | `POST /catalog/search` | machine ns = what is inside and at what price; supply ns = what can be bought | hourly telemetry sync (inventory); daily wholesale-cost refresh (supply catalog) |
+| ★ | `GET /orders?kind=sale` | the ledger: the only demand signal | hourly sync + 5-minute order-event poll |
+| ★ | `POST /locations/sync` | pulls inventory + ledger into route state; the plan is built from it | dashboard "sync" and the hourly task |
+| ★ | `GET /replenishment/plan` | per-slot demand, days of cover, recommended action | daily 07:00 curate + restock loop |
+| ★ | `POST /checkout-sessions` → `POST …/complete` | the only path that spends real money at a supplier | operator/agent initiated; loops never order on their own |
+| ★ | `PUT /locations/{id}/prices` | the only path that changes a live price | operator/agent initiated; over the cap → approval |
+| ★ | `GET /approvals` · `POST /approvals/{id}` | human in the loop for over-budget / over-cap actions | chat approval cards, dashboard |
+| ★ | `GET /events` | audit line: every decision, sale, error | dashboard live feed, weekly letter |
+
 ## Checkout status machine
 
 `incomplete` → `requires_escalation` (owner approval: over budget, probation) → `ready_for_complete` →

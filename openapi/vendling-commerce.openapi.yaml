@@ -9,6 +9,10 @@ info:
     `dev.ucp.shopping.checkout`, `dev.ucp.shopping.fulfillment`, `dev.ucp.shopping.order`,
     `dev.ucp.common.location.*`. Vending-specific behaviour is exposed as
     `com.xiaopingfeng.vendling.*` extensions. Amounts are integer CNY fen; timestamps are RFC 3339.
+
+    Operations badged **核心** are the minimum set a route needs day to day (discovery, namespaces,
+    locations, catalog, sales ledger, sync, replenishment plan, checkout create + complete, prices,
+    approvals, events) — 13 of the 34 operations. Everything else is a convenience; see the guide §2.1.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -49,6 +53,10 @@ paths:
     get:
       tags: [discovery]
       operationId: getProfile
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: UCP business profile (services, capabilities, payment handlers)
       security: []
       responses:
@@ -63,6 +71,10 @@ paths:
     post:
       tags: [catalog]
       operationId: searchCatalog
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Search a supplier catalog (a supply namespace) or one machine's live inventory (a machine namespace), selected by filters.namespace
       parameters: [{ $ref: "#/components/parameters/UcpAgent" }]
       requestBody:
@@ -133,6 +145,10 @@ paths:
     get:
       tags: [sku]
       operationId: listNamespaces
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: The vendor namespaces this deployment serves, and the defaults
       responses:
         "200":
@@ -246,6 +262,10 @@ paths:
     post:
       tags: [location]
       operationId: searchLocations
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Find machines by text, item availability or amenity
       requestBody:
         content:
@@ -302,6 +322,10 @@ paths:
     post:
       tags: [location]
       operationId: syncLocations
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Pull live inventory + sales for every registered machine now (extension)
       requestBody:
         content:
@@ -380,6 +404,10 @@ paths:
     put:
       tags: [pricing]
       operationId: updatePrices
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Change live customer-facing prices on a machine (real write; confirm + kill switch + price cap)
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -471,6 +499,10 @@ paths:
     post:
       tags: [checkout]
       operationId: createCheckout
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Open a wholesale purchase-order session (nothing is spent until /complete)
       parameters:
         - { $ref: "#/components/parameters/UcpAgent" }
@@ -523,6 +555,10 @@ paths:
     post:
       tags: [checkout]
       operationId: completeCheckout
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Place the real wholesale order (spends money; confirm + kill switch + budget guard)
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -575,6 +611,10 @@ paths:
     get:
       tags: [order]
       operationId: listOrders
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: List orders (extension). `kind=sale` reads the machine transaction ledger.
       parameters:
         - { name: kind, in: query, schema: { type: string, enum: [sale, purchase], default: sale } }
@@ -620,6 +660,10 @@ paths:
     get:
       tags: [replenishment]
       operationId: getReplenishmentPlan
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: What the strategy would order right now, per slot, with provenance
       responses:
         "200":
@@ -747,6 +791,10 @@ paths:
     get:
       tags: [approval]
       operationId: listApprovals
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Decisions awaiting (or past) owner approval
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected], default: pending } }
@@ -780,6 +828,10 @@ paths:
     post:
       tags: [approval]
       operationId: resolveApproval
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Approve or reject. A Feishu resolver must be a registered admin in a registered admin chat.
       requestBody:
         required: true
@@ -810,6 +862,10 @@ paths:
     get:
       tags: [events]
       operationId: listEvents
+      x-badges:
+        - name: 核心
+          position: before
+          color: "#0f766e"
       summary: Recent events, newest first
       parameters:
         - { name: limit, in: query, schema: { type: integer, default: 50 } }

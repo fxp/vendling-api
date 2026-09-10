@@ -29,6 +29,14 @@ Machine-readable index: https://vendling.dev/api/llms.txt.
 | Staging (mock data, no supplier credentials — nothing can spend money) | `https://vendling-core-staging.fxp007.workers.dev/ucp/v1` |
 | Reference | https://vendling.dev/api/reference |
 
+**Core set — wire these first (13 of 34 operations, badged 核心 in the reference):**
+`GET /.well-known/ucp` · `GET /namespaces` · `POST /locations/search` · `POST /catalog/search` ·
+`GET /orders?kind=sale` · `POST /locations/sync` · `GET /replenishment/plan` ·
+`POST /checkout-sessions` + `POST …/complete` · `PUT /locations/{id}/prices` ·
+`GET /approvals` + `POST /approvals/{id}` · `GET /events`. These are what the Vendling route itself
+runs on every day (hourly sync, 5-minute order polling, the daily plan, chat approvals) plus the
+only two actions that move money or change a live price. Everything else is a convenience.
+
 Every response carries a `ucp` envelope; read `messages[]` before the data
 (`references/errors.md`). If `/.well-known/ucp` returns 404 the standard routes aren't
 deployed on that host — say so; never fabricate a response.
