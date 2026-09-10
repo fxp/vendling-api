@@ -175,6 +175,8 @@ curl -s -X POST -H "$H" -H "$J" $U/locations/sync -d '{"sales_window_days":30}'
 - `GET /replenishment/plan` says whether lead time is `measured` or `stated` and whether a
   demand rate is `measured`. Repeat that qualifier when you report numbers.
 - Cost/margin are never in catalog responses; `cost_is_estimated` on a run means exactly that.
+- A sale is only a sale when `trade_status` is `settled`. Open-door smart cabinets report orders that are still being
+  recognised or reviewed (`finalized: false`); those can change — dedupe on `(id, updated_at)` and never count them as revenue.
 
 ## 6. Where to read more
 

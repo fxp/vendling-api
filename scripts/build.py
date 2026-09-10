@@ -29,6 +29,7 @@ SKILL = ROOT / "skill" / "vendling-commerce-api"
 AGENT_SETUP = ROOT / "agent-setup" / "prompt.md"
 
 SCALAR_VERSION = "1.68.0"  # pinned; bump deliberately
+MERMAID_VERSION = "11.4.1"  # pinned; sequence diagrams in the guide (appendix C)
 CANONICAL = "https://vendling.dev/"
 API_BASE = CANONICAL + "api/"
 DOCS_REPO = "https://github.com/fxp/vendling-api"
@@ -108,6 +109,7 @@ img{max-width:100%;height:auto}
 section.off>*:not(h2):not(h3){display:none}section.off h2,section.off h3{opacity:.45}
 section.off h2::after,section.off h3::after{content:" · 与所选设备无关";font-size:12px;font-weight:400;color:var(--fg-mute)}
 aside .toc a.off{opacity:.4}
+pre.mermaid{background:transparent;border:0;padding:0;overflow:visible;text-align:center}pre.mermaid svg{max-width:100%;height:auto}
 .doclist{list-style:none;padding:0;margin:8px 0 0}.doclist li{border-bottom:1px solid var(--line);padding:12px 0}.doclist li a{font-weight:600;color:var(--fg)}.doclist li small{display:block;color:var(--fg-mute)}
 @media(max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}main{padding:20px 18px 60px}h1{font-size:28px}.hero h1{font-size:32px}}
 """
@@ -204,6 +206,24 @@ def render_md(text: str, toc_depth: str = "2-3") -> tuple[str, str]:
 # ── /api/ ────────────────────────────────────────────────────────────────
 
 PROFILE_RE = re.compile(r"\s*<!--\s*profiles:\s*([a-z0-9, -]+?)\s*-->")
+MERMAID_RE = re.compile(r'<pre><code class="language-mermaid">(.*?)</code></pre>', re.S)
+
+MERMAID_JS = """
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@%s/dist/mermaid.esm.min.mjs";
+const pres=[...document.querySelectorAll("pre.mermaid")];pres.forEach(p=>{p.dataset.src=p.textContent});
+function mode(){return document.documentElement.getAttribute("data-mode")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light")}
+async function render(){mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:mode()==="dark"?"dark":"neutral",fontFamily:"inherit",sequence:{useMaxWidth:true,mirrorActors:false}});
+for(const p of pres){p.removeAttribute("data-processed");p.textContent=p.dataset.src}
+try{await mermaid.run({nodes:pres})}catch(e){console.warn("mermaid",e)}}
+render();new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:["data-mode"]});
+""" % MERMAID_VERSION
+
+
+def mermaid_blocks(body: str) -> str:
+    """```mermaid fences → <pre class="mermaid">source</pre>. The escaped source
+    stays as the element's text (mermaid reads textContent); without the CDN
+    script the reader still sees the diagram source."""
+    return MERMAID_RE.sub(r'<pre class="mermaid">\1</pre>', body)
 
 
 def wrap_profiles(body: str) -> str:
@@ -245,6 +265,7 @@ def build_guide(site: Site) -> str:
         src = src.replace(f"]({name})", f"]({target if site.with_docs else CORE_REPO + '/blob/main/docs/' + name})")
     body, toc = render_md(src)
     body = wrap_profiles(body)
+    body = mermaid_blocks(body)
     selector = (
         '<div class="devsel" role="group" aria-label="我是谁"><span class="lbl">我是谁</span>'
         '<button data-device="all" class="on">全部</button>'
@@ -290,6 +311,7 @@ def build_guide(site: Site) -> str:
 </article></main>
 </div>
 <script>{MODE_JS}</script>
+<script type="module">{MERMAID_JS}</script>
 </body></html>"""
     return page
 
@@ -375,7 +397,7 @@ supplier credentials): `https://vendling-core-staging.fxp007.workers.dev`.
 
 ## Docs
 
-- [Guide (Chinese, normative)]({API_BASE}): capabilities, entities, status machines, guardrails, the adapter contract (appendix A), capability × device matrix (appendix B)
+- [Guide (Chinese, normative)]({API_BASE}): capabilities, entities, status machines, guardrails, the adapter contract (appendix A), capability × device matrix (appendix B), sequence diagrams of the key scenarios (appendix C, Mermaid source in the markdown)
 - [Full guide as markdown]({API_BASE}llms-full.txt)
 - [OpenAPI 3.1]({API_BASE}openapi.yaml) · [rendered reference]({API_BASE}reference)
 

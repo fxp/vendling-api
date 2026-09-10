@@ -85,6 +85,7 @@ UCP 只定义两个角色：**Platform**（消费能力的一方）和 **Busines
 本规范一共 34 个操作，一条线路日常运转只依赖其中 13 个。它们要么是 Vendling 自己的定时循环每天在调的能力，
 要么是仅有的两个会动真钱、改真价的动作。先接这些；其余的（Lookup、别名注册表、结账会话的查改撤、采购单状态、
 行程的下单与收货、预测评分、补货推荐……）都是便利接口，按需再接。API Reference 里这 13 个操作带 **核心** 徽标。
+关键场景的时序图见附录 C。
 
 | ★ | 操作 | 能力 | 为什么必需 | Vendling 自己怎么用 |
 |---|---|---|---|---|
@@ -123,13 +124,13 @@ UCP 只定义两个角色：**Platform**（消费能力的一方）和 **Busines
 | `GET /orders/{id}`（`kind: purchase`） | §8.1 | | 变成你的 `orderStatus(ref)`，含物流 | 便利 |
 | `GET /orders?kind=sale` | §8.2 | ★ 数据来自你的 `ledger()`，账户级交易流水 | | ★ 需求信号 |
 | `PUT /locations/{id}/prices` | §9 | ★ 变成你的 `updatePrices()`，真实改价 | | ★ 改真价 |
-| `POST /locations/{id}/restock-recommendations` | §10.3 | 变成你的 `restockRecommend()`，给你的运维团队 | | 便利 |
+| `POST /locations/{id}/restock-recommendations`；行程 `place` 路由到平台 | §10.3 | 推荐变成你的 `restockRecommend()`；Agent 下的**补货订单**变成你的 `restockOrder()`，你回执状态与实际数量 | | 便利 / ★ 补货执行 |
 | `GET /replenishment/plan`、`/replenishment/runs…` | §10.1–10.2 | | | ★ 计划；行程 |
 | `GET /approvals`、`POST /approvals/{id}` | §11 | | | ★ 人在回路 |
 | `GET /events`、`POST /events` | §12 | | | ★ 审计线 |
 
-**售货机厂商 / 机器管理平台要做的**：实现附录 A.3 的四个方法（`inventory`、`ledger`、`updatePrices`、`restockRecommend`），
-登记命名空间 `<vendor>-machine`（A.4）。不需要理解结账、采购单、补货计划——那些在你之上。
+**售货机厂商 / 机器管理平台要做的**：实现附录 A.3 的 `inventory` 与 `ledger`，按你支持的能力再加 `updatePrices`、`restockRecommend`
+或 `restockOrder` + `restockOrderStatus`，登记命名空间 `<vendor>-machine`（A.4）。不需要理解结账、采购单、补货计划——那些在你之上。
 
 **商品供应商 / 批发平台要做的**：实现附录 A.2 的三个方法（`catalog`、`createOrder`、`orderStatus`），登记 `<vendor>-supply`。
 目录请带条码和箱规（`packSize`），只按个卖就给 `packSize = 1`；`createOrder` 以采购单号 `ref` 幂等。不需要理解机器库存、改价、审批。
@@ -720,7 +721,13 @@ GET /orders?kind=sale&location=12345678&from=2026-09-09T00:00:00%2B08:00&to=2026
       "totals": [{ "type": "subtotal", "amount": 600 }, { "type": "total", "amount": 600 }],
       "location": "12345678",
       "location_name": "某写字楼11层",
-      "trade_status": "SETTLED"
+      "trade_status": "settled",
+      "finalized": true,
+      "taken_at": "2026-09-09T13:00:12+08:00",
+      "settled_at": "2026-09-09T13:00:14+08:00",
+      "updated_at": "2026-09-09T13:00:14+08:00",
+      "trade_status_raw": "SETTLED",
+      "trade_status_label": "交易成功"
     }
   ],
   "pagination": { "cursor": "eyJwYWdlIjoyfQ", "has_next_page": true }
@@ -737,9 +744,29 @@ GET /orders?kind=sale&location=12345678&from=2026-09-09T00:00:00%2B08:00&to=2026
 | `refund_failed` | `fulfilled` | `{1,1,1}` | `{ type: "refund", status: "failed" }` |
 | `cancelled` | `removed` | `{1,0,0}` | `{ type: "cancellation", status: "completed" }` |
 
-- **只有 `paid` 行进入销售统计**。列表缺省只取已结算交易（`trade_status=settled`），传 `trade_status=all` 取全部。
+**订单级状态 `trade_status`** 归一为六种。传统弹簧机"先付后出货"，一笔交易生成即终态；开门自取式智能柜
+（扫码 / 刷脸授权 → 开门 → 取货 → 关门 → 视频上传 → 视觉识别 → 可能人工复核 → 免密扣款）的一笔交易在关门时就已存在，
+之后商品、数量、金额都可能被识别和复核改写，几分钟到几小时后才结算。两类机器共用同一套状态（时序见附录 C.6）：
+
+| `trade_status` | 含义 | 智能柜阶段 | 行 `status` | `finalized` |
+|---|---|---|---|---|
+| `in_progress` | 已授权 / 开门 / 取货中 / 关门待识别 | 授权 → 关门 → 上传 | `processing` | `false` |
+| `pending_review` | 识别有疑问，等人工复核 | 人工复核 | `processing` | `false` |
+| `settled` | 已扣款成功（弹簧机：出货即此态） | 扣款成功 | `fulfilled` | `true` |
+| `payment_failed` | 识别已定、扣款失败或欠费 | 扣款失败 / 追缴中 | `processing` | `false` |
+| `refunded` | 结算后全额或部分退款 | 申诉 / 复核后退款 | `removed` + `refund` 调整 | `true` |
+| `cancelled` | 空单（未取货、识别为空）或平台取消 | 0 元单 | `removed` + `cancellation` 调整 | `true` |
+
+- **只有 `settled` 订单里的 `paid` 行进入销售统计**。列表缺省只取 `trade_status=settled`，传 `all` 取全部，或传单个状态值。
+- **三个时间**：`taken_at` 是取货时间（弹簧机 = 出货时间；智能柜 = 关门时间），需求测算用它；`settled_at` 是扣款成功时间，营收用它；
+  `updated_at` 是订单最近一次变化的时间。`from` / `to` 按 `taken_at` 过滤；**`updated_from` / `updated_to`** 按 `updated_at` 过滤，
+  这是轮询晚结算、被复核改写、结算后退款的订单的唯一可靠方式——只按取货时间拉窗口会漏掉它们。
+- `finalized = false` 的订单**会变**：商品、数量、金额都可能被识别或复核改写。调用方缓存或去重时必须以 `(id, updated_at)` 而不是 `id` 为键。
 - 流水是**账户级**的：`location` 参数是服务端在全量结果上做的筛选，多机器线路上要跨机器完整翻页（上限 20 页，超过带 `history_truncated` 警告）。
-- `trade_status` / `trade_status_label` 是机器平台的原始状态，扩展字段，供排障用。
+- `trade_status_raw` / `trade_status_label` 是机器平台的原始状态，扩展字段，供排障用。
+- 授权方式、会员标识等**顾客身份信息不进入本规范**：适配器不得透传。
+- **[缺]** `trade_status` 归一化枚举、`finalized`、`taken_at`、`settled_at`、`updated_at`、`updated_from` / `updated_to`：规范自 2026-09-10 起要求；
+  参考实现当前把原始状态放在 `trade_status`、只区分已结算 / 全部，因为它接的第一台机器是即付即结的弹簧机。
 
 ---
 
@@ -778,7 +805,8 @@ PUT /locations/12345678/prices
 |---|---|---|---|
 | **计划 Plan** | 策略算出来的"每个货道现在该订多少" | 本系统，每日 | 否 |
 | **行程 Run** | 一次出门要跑的机器、要带的货、预估成本；可下单、可收货 | 运营者 | 下单那一步花 |
-| **补货推荐 Recommendation** | 给机器平台自家运维队伍的"往这台机器装什么"的提示 | 机器平台 | 否 |
+| **补货推荐 Recommendation** | 给机器平台自家运维队伍的"往这台机器装什么"的提示，无约束力 | 机器平台 | 否 |
+| **补货订单 Order** | 交给机器平台执行的有约束力的补货单，有回执（状态、实际数量、完成时间） | 机器平台 | 平台计价时花 |
 
 | 操作 | 方法 | 端点 |
 |---|---|---|
@@ -789,6 +817,7 @@ PUT /locations/12345678/prices
 | 收货 | `POST` | `/replenishment/runs/{id}/receive` `{delivered:[{slot_id, quantity}], note?}` |
 | 预测评分 | `GET` | `/replenishment/score?horizon_days=7` |
 | 向机器平台推荐 | `POST` | `/locations/{id}/restock-recommendations` `{reference, line_items:[{item:{id}, quantity, reason}]}` |
+| 向机器平台下补货订单 | — | 没有单独端点：行程 `place` 在平台登记了 `replenishment.order` 能力时路由到它（§10.3） |
 
 ### 10.1 计划
 <!-- profiles: machine,supply -->
@@ -821,16 +850,30 @@ PUT /locations/12345678/prices
 | `placed` / `delivered` | 已下单（`placed_at`）/ 已收货（`delivered_at`） |
 
 - 行项目是机内 SKU（`machine` 角色）；每行带 `source`（经 §5.4 解析到的可采购 `sku_id` + 计量单位，缺省按个）。
-- **下单** `place`：紧急停机 `409`；已下单 `409 already_placed`；待审批 `409 approval_required`。当前实现把行项目交给**模拟供货方**（响应带 `supplier: "simulated"`），未解析的行只是 `unresolved_sku` 警告；接真实供货方后，`place` 按 `source` 创建 §7 的结账会话（跨供货方时拆成多张），未解析的行升级为错误。
+- **下单** `place`：紧急停机 `409`；已下单 `409 already_placed`；待审批 `409 approval_required`。行程按 `fulfiller` 路由（时序见附录 C.5）：
+  `supply` —— 按 `source` 创建 §7 的结账会话（跨供货方时拆成多张），未解析的行是错误；
+  `machine_platform` —— 机器平台登记了 `replenishment.order` 能力时，整张行程作为**补货订单**交给它执行（A.3 `restockOrder`），`external_ref` 记平台单号，回执自动填 `receive`；
+  `simulated` —— 参考实现今天的路径（响应带 `supplier: "simulated"`），未解析的行只是 `unresolved_sku` 警告。
+  **[缺]** `fulfiller` / `external_ref` 字段与前两条路由。
 - **收货** `receive`：`quantity` 非负整数；有容量时封顶；已收货 `409 already_delivered`。
 - 已下单未收货的行程覆盖的货道，在下一次计划里**跳过**，避免为同一批货付两次钱。
 - `cost_is_estimated = true` 表示有行项目没有真实成本（用零售价 × 0.55 估的）；这个数字决定要不要审批，所以必须说明它是估的。
 
-### 10.3 向机器平台的补货推荐
+### 10.3 向机器平台的补货推荐或补货订单
 <!-- profiles: machine,supply,vendor-machine -->
 
-- `item.id` 必须是 `machine` 角色；`reference` 是机器平台要求的批次号；`reason` 超过 100 字截断。
-- 不花钱、没有 `confirm`，但**受紧急停机约束**：它会推动别人去往机器里装货。
+两种形态，取决于机器平台登记的能力：
+
+| | 补货推荐 `replenishment.recommend` | 补货订单 `replenishment.order` |
+|---|---|---|
+| 端点 | `POST /locations/{id}/restock-recommendations` | `POST /replenishment/runs/{id}/place`（行程路由到机器平台） |
+| 约束力 | 无，提示平台运维 | 有，平台执行并回执 |
+| 适配器方法 | `restockRecommend` | `restockOrder` + `restockOrderStatus` |
+| 回执 | 无 | 状态、实际数量、完成时间，自动填 `receive` |
+| 护栏 | 紧急停机 | 紧急停机；平台计价时同采购预算 |
+
+- 推荐：`item.id` 必须是 `machine` 角色；`reference` 是机器平台要求的批次号；`reason` 超过 100 字截断。不花钱、没有 `confirm`，但**受紧急停机约束**：它会推动别人去往机器里装货。
+- 订单：`ref` 由本系统生成并作幂等键；平台回执的 `delivered[]` 就是收货数量。**[缺]** 规范已定义，参考实现尚未接入任何执行补货的机器平台。
 
 ---
 
@@ -872,6 +915,9 @@ PUT /locations/12345678/prices
   "summary": "order event: 2026090913001234 (交易成功) at 某写字楼11层 — 1 item(s), ¥6", "reasoning": "machine platform ledger poll", "location": "12345678" }
 ```
 
+订单变化：智能柜的一笔订单会从 `in_progress` 走到 `settled` 或 `payment_failed`（§8.2）。首次看到报 `order`，之后每次 `updated_at` 变化再报 **`order_updated`**，
+`summary` 带新旧状态。**[缺]** 参考实现目前只按订单号去重、每笔只报一次。
+
 `kind` 是开放字符串。`occurred_at` 是**事情发生的时间**，不是入库时间。机器平台没有 webhook 时，订单事件由本系统
 每 5 分钟轮询流水、去重后追加；要对接 UCP 平台的 Webhook，只需在同一处把 §8.2 的 Order 实体 `POST` 到对方 URL（头带 `Webhook-Id`、`Webhook-Timestamp`）。
 
@@ -885,6 +931,7 @@ PUT /locations/12345678/prices
 | §9 改价 | 必需 | 拒 | `priceCapPerItem` | `approval_required` | 事件 |
 | §10.2 行程下单 place | — | 拒 | 同采购 | 决策必须已批 | 决策 + 事件 |
 | §10.3 补货推荐 | — | 拒 | — | — | — |
+| §10.3 补货订单（行程 place 路由到机器平台） | — | 拒 | 平台计价时同采购 | 决策必须已批 | 决策 + 事件 |
 | §6 名册增删 / 同步 | — | 不受影响 | — | — | 事件 |
 | 读操作 | — | **不受影响** | — | — | — |
 
@@ -914,7 +961,7 @@ Vendling 不直接依赖任何厂商接口。每个上游通过一个**适配器
 | 方法 | 输入 | 输出 |
 |---|---|---|
 | `catalog({keyword?})` | 可选关键词 | `{ products: SupplyProduct[], sites: SupplySite[] }` |
-| `createOrder(ref, lines, fulfillment)` | `lines: [{vendorSku, quantity, unit: "each" \| "pack"}]`；`fulfillment: {method:"shipping", contactName, contactPhone, address} \| {method:"pickup", pickupAt, siteId?}` | `{ externalRef }` 供货方订单号 |
+| `createOrder(ref, lines, fulfillment)` | `lines: [{vendorSku, quantity, unit: "each" \| "pack"}]`；`fulfillment: {method:"shipping", contactName, contactPhone, address} \| {method:"pickup", pickupAt, siteId?} \| {method:"restock", locationId}` | `{ externalRef }` 供货方订单号 |
 | `orderStatus(ref)` | 采购单号 | `{ state: "ordered" \| "arrived" \| "cancelled", description, rawStatus, logistics[] }` |
 
 ```
@@ -924,24 +971,36 @@ SupplySite    { id, name?, address? }
 
 `packSize = 1` 表示只按个卖（目录里不会出现 `BX`）。只拿得到箱价时 `eachPriceFen = round(packPriceFen / packSize)` 且 `eachPriceDerived = true`。
 
+`method: "restock"` 表示供货方自己把货装进机器（既供货又负责入柜的平台）：目的地是机器编号而不是地址或自提点，到货即 `arrived`。**[缺]**
+
 ### A.3 角色 `machine`（命名空间 `<vendor>-machine`）
 <!-- profiles: adapter,supply,machine,vendor-machine -->
 
-| 方法 | 输入 | 输出 |
-|---|---|---|
-| `inventory(locationId)` | 机器编号 | `MachineItem[]` |
-| `ledger({fromMs, toMs, page?, size?, settledOnly?})` | 时间窗（账户级） | `{ records: LedgerRecord[], page, pages, total }` |
-| `updatePrices(locationId, [{vendorSku, priceFen}])` | 真实改价 | `{ count }` |
-| `restockRecommend(locationId, ref, [{vendorSku, quantity, reason}])` | 给平台运维的提示 | `{ count }` |
+| 方法 | 输入 | 输出 | 必需 |
+|---|---|---|---|
+| `inventory(locationId)` | 机器编号 | `MachineItem[]` | 是 |
+| `ledger({fromMs, toMs, by?, page?, size?, settledOnly?})` | 时间窗（账户级）；`by` 取 `"taken"`（缺省）或 `"updated"` | `{ records: LedgerRecord[], page, pages, total }` | 是 |
+| `updatePrices(locationId, [{vendorSku, priceFen}])` | 真实改价 | `{ count }` | 否，能力 `pricing` |
+| `restockRecommend(locationId, ref, [{vendorSku, quantity, reason}])` | 给平台运维的提示，无约束力 | `{ count }` | 否，能力 `replenishment.recommend` |
+| `restockOrder(locationId, ref, [{vendorSku, quantity}])` | **有约束力的补货订单**，平台执行并回执；`ref` 幂等 | `{ externalRef }` | 否，能力 `replenishment.order` |
+| `restockOrderStatus(ref)` | 补货单号 | `{ state: "received" \| "in_transit" \| "completed" \| "cancelled", delivered: [{vendorSku, quantity}], completedAt: ms\|null, rawStatus }` | 随 `restockOrder` |
 
 ```
-MachineItem  { vendorSku, title, barcode?, priceFen, stock, imageUrl? }
-LedgerRecord { orderNo, status, statusLabel?, locationId, locationName?, totalFen, createdAt: ms|null, createdAtRaw, lines: LedgerLine[] }
+MachineItem  { vendorSku, title, barcode?, priceFen, stock, imageUrl?, slotId? }
+LedgerRecord { orderNo, status, statusLabel?, state?, locationId, locationName?, totalFen, createdAt: ms|null, createdAtRaw,
+               takenAt?: ms|null, settledAt?: ms|null, updatedAt?: ms|null, finalized?: boolean, lines: LedgerLine[] }
 LedgerLine   { vendorSku, priceFen, costFen: number|null, status: "paid"|"unpaid"|"refunded"|"refund_failed"|"cancelled" }
 ```
 
-`costFen` 只在上游给出一个**不等于售价**的成本时才有值；等于售价的"成本"没有信息量，必须置 `null`。
-流水是账户级的：适配器不做位置过滤，调用方按 `locationId` 分拣。
+- `status` / `statusLabel` 是上游原始状态；`state` 是归一后的六态之一（§8.2：`in_progress | pending_review | settled | payment_failed | refunded | cancelled`）。
+  不给 `state` 时由行状态推导：全部 `paid` 视为 `settled`。
+- `slotId` 是机器内的位编号（弹簧机的货道号、智能柜的层或层加位）；不给时系统用"机器-商品"代替，一层多品的柜子必须给。
+- `createdAt` 保留为上游的创建时间；`takenAt` 是取货时间（弹簧机 = 出货，智能柜 = 关门），需求测算用它；`settledAt` 是扣款成功时间；
+  `updatedAt` 是最近一次变化的时间；`finalized` 表示订单不会再变。即付即结的机器三者同值、`finalized = true`。
+- `by: "updated"` 时按 `updatedAt` 取窗口，这是拿到晚结算、复核改写、结算后退款订单的唯一可靠方式；平台不支持时返回 `{ ok: false, reason: "unsupported" }`，调用方退回全量拉取。
+- `costFen` 只在上游给出一个**不等于售价**的成本时才有值；等于售价的"成本"没有信息量，必须置 `null`。
+- 流水是账户级的：适配器不做位置过滤，调用方按 `locationId` 分拣。
+- **[缺]** `state`、`takenAt` / `settledAt` / `updatedAt` / `finalized`、`by`、`slotId`、`restockOrder` / `restockOrderStatus`：规范自 2026-09-10 起定义，参考实现尚未提供。
 
 ### A.4 注册与发现
 
@@ -953,7 +1012,7 @@ LedgerLine   { vendorSku, priceFen, costFen: number|null, status: "paid"|"unpaid
 
 按 A.2 / A.3 实现对应角色即可，其余接口（目录、结账、订单、位置、改价、补货、审批、事件）不需要改动。
 一台没有云平台的本地控制售货机，通常只需实现 `machine` 角色的 `inventory` 与 `ledger`（由本地网关维护），
-`updatePrices` 与 `restockRecommend` 可以返回 `{ ok: false, reason: "unsupported" }`，对应能力就不会出现在它的 `capabilities[]` 里。
+`updatePrices`、`restockRecommend`、`restockOrder` 可以返回 `{ ok: false, reason: "unsupported" }`，对应能力就不会出现在它的 `capabilities[]` 里。
 
 ---
 
@@ -975,8 +1034,198 @@ LedgerLine   { vendorSku, priceFen, costFen: number|null, status: "paid"|"unpaid
 | §8.2 机器交易 | ✓ | | | ✓ | |
 | §9 定价 | ✓ | | | ✓ | |
 | §10.1 补货计划、§10.2 行程 | ✓ | ✓ | | | |
-| §10.3 补货推荐 | ✓ | ✓ | | ✓ | |
+| §10.3 补货推荐 / 补货订单 | ✓ | ✓ | | ✓ | |
 | §11 审批、§12 事件、§13 护栏 | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 附录 A.1 / A.4 / A.5 | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 附录 A.2 `supply` 契约 | ✓ | ✓ | ✓ | | ✓ |
 | 附录 A.3 `machine` 契约 | ✓ | ✓ | ✓ | ✓ | |
+| 附录 C 时序图 | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+---
+
+## 附录 C. 关键场景时序图
+
+六个场景按当前定义的接口画，标 **[缺]** 的步骤规范已定义、参考实现尚未提供。图随"我是谁"选择器折叠；Mermaid 源码在 `llms-full.txt` 里原样保留，Agent 可以直接读。
+
+### C.1 首次接入与发现
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as 外部 Agent
+  participant V as Vendling /ucp/v1
+  participant M as 机器适配器 (acme-machine)
+  A->>V: GET /.well-known/ucp（无 token）
+  V-->>A: 版本、能力、namespaces 与 defaults
+  A->>V: GET /namespaces
+  V-->>A: acme-machine / acme-supply，live 或 planned
+  A->>V: POST /locations/search {}
+  V-->>A: locations[]（机器即门店）
+  A->>V: POST /catalog/search {namespace: acme-machine, location}
+  V->>M: inventory(locationId)
+  M-->>V: MachineItem[]
+  V-->>A: products[]，variants 带 price、inventory、aliases
+```
+
+### C.2 每小时同步与订单事件
+<!-- profiles: machine,vendor-machine -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as 定时任务
+  participant V as Vendling
+  participant M as 机器适配器
+  participant P as 机器平台
+  participant E as 事件流 / 群聊
+  loop 每小时同步
+    S->>V: POST /locations/sync（等价）
+    V->>M: inventory(locationId)，每台机器一次
+    M->>P: 查库存
+    V->>M: ledger({fromMs, toMs, settledOnly: true})
+    M->>P: 查流水
+    V->>V: 重建 machines / products / slots / sales，保留 rules、锁定、决策
+  end
+  loop 每 5 分钟轮询订单
+    V->>M: ledger(最近 3 小时)
+    M-->>V: LedgerRecord[]
+    V->>V: 按订单号去重
+    V->>E: event kind=order
+  end
+  Note over V,P: 智能柜要按 updated_at 拉取并对 (id, updated_at) 去重，状态变化再报 order_updated [缺]
+```
+
+### C.3 采购下单（花真钱）
+<!-- profiles: supply,vendor-supply -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Agent
+  participant V as Vendling
+  participant O as 店主（群聊审批）
+  participant S as 供货适配器 (acme-supply)
+  participant W as 供货方
+  A->>V: POST /catalog/search {namespace: acme-supply, query}
+  V-->>A: variants 带 sale_units（EA / BX）
+  A->>V: POST /skus/resolve {ids: [机器 sku], to_namespace: acme-supply}
+  V-->>A: 可采购 sku_id（仅 barcode / manual 别名）
+  A->>V: POST /checkout-sessions {line_items, fulfillment}
+  V->>V: 读 rules（读不到则 503）、hardNoGos、spendingLimitPerRun、试用期
+  alt 超预算或试用期
+    V-->>A: requires_escalation，生成审批决策
+    V->>O: 审批卡片
+    O->>V: POST /approvals/{id} {approved: true}
+    V-->>A: ready_for_complete
+  else 通过
+    V-->>A: ready_for_complete
+  end
+  A->>V: POST /checkout-sessions/{id}/complete {confirm: true}
+  V->>V: 紧急停机则 409
+  V->>S: createOrder(ref, lines, fulfillment)
+  S->>W: 真实下单
+  W-->>S: externalRef
+  V-->>A: completed，order{id, label, permalink_url}
+  V->>V: 写事件
+  A->>V: GET /orders/{id}（之后轮询）
+  V->>S: orderStatus(ref)
+  S-->>V: ordered / arrived / cancelled，附物流
+```
+
+### C.4 改价与审批
+<!-- profiles: machine,vendor-machine -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Agent
+  participant V as Vendling
+  participant O as 店主
+  participant M as 机器适配器
+  participant P as 机器平台
+  A->>V: PUT /locations/{id}/prices {prices, confirm: true}
+  V->>V: 校验 machine 命名空间、confirm 为布尔、紧急停机
+  V->>M: inventory(locationId) 取现价
+  V->>V: 新价与现价之差对比 priceCapPerItem
+  alt 超过上限
+    V-->>A: 200 approval_required（未执行）
+    V->>O: price_change 审批卡片
+    O->>V: POST /approvals/{id} {approved: true}
+    V->>M: updatePrices(locationId, lines)
+    M->>P: 真实改价
+    V->>V: 写事件
+  else 在上限内
+    V->>M: updatePrices(locationId, lines)
+    M->>P: 真实改价
+    V-->>A: updated[]
+    V->>V: 写事件
+  end
+```
+
+### C.5 补货闭环
+<!-- profiles: machine,supply,vendor-machine -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as 每日循环
+  participant V as Vendling
+  participant O as 店主
+  participant S as 供货适配器
+  participant M as 机器适配器
+  C->>V: 刷新批发成本（supply catalog）
+  C->>V: GET /replenishment/plan（每货道日销、余量天数、建议）
+  C->>V: POST /replenishment/runs
+  V->>V: 预估成本对比 spendingLimitPerRun
+  opt 超预算
+    V->>O: restock_plan 审批
+    O->>V: 批准
+  end
+  V-->>C: run{status: approved}
+  C->>V: POST /replenishment/runs/{id}/place
+  alt fulfiller = supply
+    V->>S: createOrder（§7 结账，跨供货方拆单）
+  else fulfiller = machine_platform
+    V->>M: restockOrder(locationId, ref, lines) [缺]
+  else fulfiller = simulated（参考实现今天）
+    V->>V: 交给模拟供货方
+  end
+  V-->>C: run{status: placed, placed_at}
+  Note over V: 已下单未收货的货道在下一次计划中跳过
+  M-->>V: 到货回执 restockOrderStatus [缺]
+  C->>V: POST /replenishment/runs/{id}/receive {delivered}
+  V->>V: 库存增加（封顶容量），run{status: delivered}
+```
+
+### C.6 智能柜订单生命周期
+<!-- profiles: machine,vendor-machine -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as 顾客
+  participant P as 机器平台
+  participant V as Vendling
+  participant E as 事件流
+  U->>P: 扫码 / 刷脸授权
+  P->>P: 订单创建，trade_status = in_progress
+  U->>P: 开门取货，关门
+  P->>P: taken_at = 关门时间，上传视频
+  P->>P: 视觉识别
+  opt 识别有疑问
+    P->>P: pending_review，人工复核可改写商品与金额
+  end
+  P->>P: 免密扣款
+  alt 扣款成功
+    P->>P: settled，settled_at，finalized = true
+  else 扣款失败
+    P->>P: payment_failed（非终态，可追缴）
+  end
+  loop Vendling 每 5 分钟
+    V->>P: ledger（updated_from = 上次轮询时间）[缺]
+    P-->>V: 含中间态与终态的订单
+    V->>V: 以 (id, updated_at) 去重
+    V->>E: 首见报 order，状态变化报 order_updated
+  end
+  Note over V: 只有 settled 且 paid 的行进入销售统计，结算后退款以 refund 调整项表示
+```

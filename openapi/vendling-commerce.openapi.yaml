@@ -685,7 +685,9 @@ paths:
         - { name: location, in: query, schema: { type: string }, description: Machine id (client-side filter; the upstream ledger is account-wide) }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
-        - { name: trade_status, in: query, schema: { type: string, default: TRADE_SUCCESS_MANUAL }, description: "`all` for every status" }
+        - { name: trade_status, in: query, schema: { type: string, enum: [settled, all, in_progress, pending_review, payment_failed, refunded, cancelled], default: settled }, description: "Order-level state (guide §8.2). Default `settled` (the only orders that count as sales); `all` for every state. [缺] the reference implementation accepts settled | all only." }
+        - { name: updated_from, in: query, schema: { type: string, format: date-time }, description: "Filter on `updated_at` instead of `taken_at` — the only reliable way to poll late-settling, revised or refunded orders (open-door smart cabinets). [缺]" }
+        - { name: updated_to, in: query, schema: { type: string, format: date-time }, description: "[缺]" }
         - { name: cursor, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 100 } }
       responses:
@@ -1476,7 +1478,7 @@ components:
       required: [type, line_item_ids]
       properties:
         id: { type: string }
-        type: { type: string, enum: [shipping, pickup], description: Supplier delivery or pickup at a supplier site }
+        type: { type: string, enum: [shipping, pickup, restock], description: "Supplier delivery, pickup at a supplier site, or restock — the supplier loads the goods into the machine itself (destination is a machine id). [缺] restock" }
         line_item_ids: { type: array, items: { type: string } }
         destinations: { type: array, items: { $ref: "#/components/schemas/FulfillmentDestination" } }
         selected_destination_id: { type: [string, "null"] }
@@ -1577,7 +1579,7 @@ components:
             type: object
             required: [id, quantity]
             properties: { id: { type: string }, quantity: { type: integer } }
-        method_type: { type: string, examples: [shipping, pickup, vending_dispense, operator_visit] }
+        method_type: { type: string, examples: [shipping, pickup, restock, vending_dispense, operator_visit] }
         destination: { $ref: "#/components/schemas/PostalAddress" }
         description: { type: string }
         fulfillable_on: { type: string, format: date-time }
@@ -1636,8 +1638,16 @@ components:
         messages: { $ref: "#/components/schemas/Messages" }
         location: { type: string, description: extension (sale) — machine id }
         location_name: { type: string, description: extension (sale) — site name from the machine platform }
-        trade_status: { type: string, description: extension (sale) }
-        trade_status_label: { type: string, description: extension (sale) }
+        trade_status:
+          type: string
+          enum: [in_progress, pending_review, settled, payment_failed, refunded, cancelled]
+          description: "extension (sale) — normalised order-level state, guide §8.2. Only `settled` counts as a sale. [缺] the reference implementation still returns the raw platform status here."
+        finalized: { type: boolean, description: "extension (sale) — false while recognition, review or payment can still change the order; dedupe on (id, updated_at) until true. [缺]" }
+        taken_at: { type: [string, "null"], format: date-time, description: "extension (sale) — when the goods left the machine (dispense, or door close on a smart cabinet); demand is measured on this. [缺]" }
+        settled_at: { type: [string, "null"], format: date-time, description: "extension (sale) — successful payment time; revenue is booked on this. [缺]" }
+        updated_at: { type: [string, "null"], format: date-time, description: "extension (sale) — last change to the order. [缺]" }
+        trade_status_raw: { type: string, description: extension (sale) — the machine platform's raw status }
+        trade_status_label: { type: string, description: extension (sale) — the platform's human label for the raw status }
         supplier_status:
           type: object
           description: extension (purchase) — the supplier's raw status, normalised in `mapped`
@@ -1698,6 +1708,8 @@ components:
         id: { type: string }
         status: { $ref: "#/components/schemas/RunStatus" }
         week_of: { type: string, format: date }
+        fulfiller: { type: string, enum: [simulated, supply, machine_platform], description: "Where `place` routes the run (guide §10.2): a supply checkout, the machine platform's own restock order (namespace declares replenishment.order), or the simulated supplier. [缺] only simulated today" }
+        external_ref: { type: string, description: "The fulfiller's own order number once placed. [缺]" }
         currency: { type: string, enum: [CNY] }
         line_items:
           type: array
