@@ -110,6 +110,19 @@ section.off>*:not(h2):not(h3){display:none}section.off h2,section.off h3{opacity
 section.off h2::after,section.off h3::after{content:" · 与所选设备无关";font-size:12px;font-weight:400;color:var(--fg-mute)}
 aside .toc a.off{opacity:.4}
 pre.mermaid{background:transparent;border:0;padding:0;overflow:visible;text-align:center}pre.mermaid svg{max-width:100%;height:auto}
+pre.mermaid svg .actor{fill:var(--side)!important;stroke:var(--accent)!important}
+pre.mermaid svg text.actor,pre.mermaid svg text.actor>tspan{fill:var(--fg)!important;stroke:none!important}
+pre.mermaid svg .actor-line{stroke:var(--fg-mute)!important}
+pre.mermaid svg .messageLine0,pre.mermaid svg .messageLine1{stroke:var(--fg-dim)!important}
+pre.mermaid svg #arrowhead path,pre.mermaid svg .arrowheadPath,pre.mermaid svg #filled-head path,pre.mermaid svg #crosshead path{fill:var(--fg-dim)!important;stroke:var(--fg-dim)!important}
+pre.mermaid svg .messageText,pre.mermaid svg .messageText>tspan{fill:var(--fg)!important;stroke:none!important}
+pre.mermaid svg .labelBox{fill:var(--accent-soft)!important;stroke:var(--accent)!important}
+pre.mermaid svg .labelText,pre.mermaid svg .labelText>tspan,pre.mermaid svg .loopText,pre.mermaid svg .loopText>tspan{fill:var(--fg)!important;stroke:none!important}
+pre.mermaid svg .loopLine{stroke:var(--accent)!important}
+pre.mermaid svg .note{fill:var(--accent-soft)!important;stroke:var(--accent)!important}
+pre.mermaid svg .noteText,pre.mermaid svg .noteText>tspan{fill:var(--fg)!important}
+pre.mermaid svg .activation0,pre.mermaid svg .activation1,pre.mermaid svg .activation2{fill:var(--code-bg)!important;stroke:var(--fg-dim)!important}
+pre.mermaid svg .sequenceNumber{fill:var(--bg)!important}
 .doclist{list-style:none;padding:0;margin:8px 0 0}.doclist li{border-bottom:1px solid var(--line);padding:12px 0}.doclist li a{font-weight:600;color:var(--fg)}.doclist li small{display:block;color:var(--fg-mute)}
 @media(max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}main{padding:20px 18px 60px}h1{font-size:28px}.hero h1{font-size:32px}}
 """
@@ -210,21 +223,12 @@ MERMAID_RE = re.compile(r'<pre><code class="language-mermaid">(.*?)</code></pre>
 
 MERMAID_JS = """
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@%s/dist/mermaid.esm.min.mjs";
-const pres=[...document.querySelectorAll("pre.mermaid")];pres.forEach(p=>{p.dataset.src=p.textContent});
-function mode(){return document.documentElement.getAttribute("data-mode")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light")}
-const VARS={dark:{background:"transparent",actorBkg:"#1a1916",actorBorder:"#e2745a",actorTextColor:"#ecebe6",actorLineColor:"#7f7b72",signalColor:"#d8d4cb",signalTextColor:"#ecebe6",lineColor:"#d8d4cb",labelBoxBkgColor:"#2b1a15",labelBoxBorderColor:"#e2745a",labelTextColor:"#ecebe6",loopTextColor:"#ecebe6",noteBkgColor:"#2b1a15",noteTextColor:"#ecebe6",noteBorderColor:"#e2745a",activationBkgColor:"#2a2823",activationBorderColor:"#bdb9b0",sequenceNumberColor:"#0f0e0c"},
-light:{background:"transparent",actorBkg:"#f5f2eb",actorBorder:"#b8452b",actorTextColor:"#1c1b18",actorLineColor:"#8a857b",signalColor:"#3a3732",signalTextColor:"#1c1b18",lineColor:"#3a3732",labelBoxBkgColor:"#f6e6e1",labelBoxBorderColor:"#b8452b",labelTextColor:"#1c1b18",loopTextColor:"#1c1b18",noteBkgColor:"#f6e6e1",noteTextColor:"#1c1b18",noteBorderColor:"#b8452b",activationBkgColor:"#e6e1d6",activationBorderColor:"#4a4741",sequenceNumberColor:"#fbfaf7"}};
-async function render(){const m=mode();mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"base",darkMode:m==="dark",themeVariables:VARS[m],fontFamily:"inherit",sequence:{useMaxWidth:true,mirrorActors:false,messageFontSize:14,noteFontSize:13,actorFontSize:15}});
-for(const p of pres){p.removeAttribute("data-processed");p.textContent=p.dataset.src}
-try{await mermaid.run({nodes:pres})}catch(e){console.warn("mermaid",e)}}
-function rgb(h){return "rgb("+[1,3,5].map(i=>parseInt(h.substr(i,2),16)).join(", ")+")"}
-function themed(){const a=document.querySelector("pre.mermaid svg rect.actor");return !a||getComputedStyle(a).fill===rgb(VARS[mode()].actorBkg)}
-// The very first run on a page sometimes comes out in mermaid's stock
-// palette even though the config already carries ours; a second run
-// always applies it. Verify by reading one actor's fill and redo once.
-async function ensure(){await render();if(!themed())await render()}
-ensure();addEventListener("load",()=>setTimeout(()=>{if(!themed())render()},400));
-new MutationObserver(ensure).observe(document.documentElement,{attributes:true,attributeFilter:["data-mode"]});
+// Colours are NOT handled by mermaid's theme: the page's own CSS (pre.mermaid svg …, see CSS)
+// paints the SVG with the site variables, so the diagrams follow the light/dark toggle for free
+// and never depend on which config a given render happened to see.
+mermaid.startOnLoad=false;
+mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:"inherit",sequence:{useMaxWidth:true,mirrorActors:false,messageFontSize:14,noteFontSize:13,actorFontSize:15}});
+mermaid.run({nodes:[...document.querySelectorAll("pre.mermaid")]}).catch(e=>console.warn("mermaid",e));
 """ % MERMAID_VERSION
 
 
