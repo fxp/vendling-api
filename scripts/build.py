@@ -212,7 +212,9 @@ MERMAID_JS = """
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@%s/dist/mermaid.esm.min.mjs";
 const pres=[...document.querySelectorAll("pre.mermaid")];pres.forEach(p=>{p.dataset.src=p.textContent});
 function mode(){return document.documentElement.getAttribute("data-mode")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light")}
-async function render(){mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:mode()==="dark"?"dark":"neutral",fontFamily:"inherit",sequence:{useMaxWidth:true,mirrorActors:false}});
+const VARS={dark:{background:"transparent",actorBkg:"#1a1916",actorBorder:"#e2745a",actorTextColor:"#ecebe6",actorLineColor:"#7f7b72",signalColor:"#d8d4cb",signalTextColor:"#ecebe6",lineColor:"#d8d4cb",labelBoxBkgColor:"#2b1a15",labelBoxBorderColor:"#e2745a",labelTextColor:"#ecebe6",loopTextColor:"#ecebe6",noteBkgColor:"#2b1a15",noteTextColor:"#ecebe6",noteBorderColor:"#e2745a",activationBkgColor:"#2a2823",activationBorderColor:"#bdb9b0",sequenceNumberColor:"#0f0e0c"},
+light:{background:"transparent",actorBkg:"#f5f2eb",actorBorder:"#b8452b",actorTextColor:"#1c1b18",actorLineColor:"#8a857b",signalColor:"#3a3732",signalTextColor:"#1c1b18",lineColor:"#3a3732",labelBoxBkgColor:"#f6e6e1",labelBoxBorderColor:"#b8452b",labelTextColor:"#1c1b18",loopTextColor:"#1c1b18",noteBkgColor:"#f6e6e1",noteTextColor:"#1c1b18",noteBorderColor:"#b8452b",activationBkgColor:"#e6e1d6",activationBorderColor:"#4a4741",sequenceNumberColor:"#fbfaf7"}};
+async function render(){const m=mode();mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"base",darkMode:m==="dark",themeVariables:VARS[m],fontFamily:"inherit",sequence:{useMaxWidth:true,mirrorActors:false,messageFontSize:14,noteFontSize:13,actorFontSize:15}});
 for(const p of pres){p.removeAttribute("data-processed");p.textContent=p.dataset.src}
 try{await mermaid.run({nodes:pres})}catch(e){console.warn("mermaid",e)}}
 render();new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:["data-mode"]});
