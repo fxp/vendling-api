@@ -203,7 +203,7 @@ def render_md(text: str, toc_depth: str = "2-3") -> tuple[str, str]:
 
 # ── /api/ ────────────────────────────────────────────────────────────────
 
-PROFILE_RE = re.compile(r"\s*<!--\s*profiles:\s*([a-z, ]+?)\s*-->")
+PROFILE_RE = re.compile(r"\s*<!--\s*profiles:\s*([a-z0-9, -]+?)\s*-->")
 
 
 def wrap_profiles(body: str) -> str:
