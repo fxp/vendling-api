@@ -29,7 +29,7 @@ Machine-readable index: https://vendling.dev/api/llms.txt.
 | Staging (mock data, no supplier credentials — nothing can spend money) | `https://vendling-core-staging.fxp007.workers.dev/ucp/v1` |
 | Reference | https://vendling.dev/api/reference |
 
-**Core set — wire these first (13 of 34 operations, badged 核心 in the reference):**
+**Core set — wire these first (13 of 32 operations, badged 核心 in the reference):**
 `GET /.well-known/ucp` · `GET /namespaces` · `POST /locations/search` · `POST /catalog/search` ·
 `GET /orders?kind=sale` · `POST /locations/sync` · `GET /replenishment/plan` ·
 `POST /checkout-sessions` + `POST …/complete` · `PUT /locations/{id}/prices` ·
@@ -63,9 +63,9 @@ with HTTP 403 error 1010 — send a descriptive UA; that 403 is not an auth fail
   is inside a machine: inventory, sales, prices, restock). The live namespaces come from
   `GET /namespaces` — never hardcode a vendor; the docs use the placeholder `acme`.
 - A machine sku and a supply sku are **never the same id**, even for the same physical
-  product. The bridge is an alias (`GET /skus/{id}`, `POST /skus/resolve`); only
-  `barcode`/`manual` aliases may be used to order. If nothing resolves, ask the user to
-  confirm the match — don't guess.
+  product. The bridge is an alias (`GET /skus/{id}` → `purchasable_from[]`, or `POST /catalog/lookup`
+  whose variants carry `aliases[]`); only `barcode`/`manual` aliases may be used to order. If nothing
+  resolves, ask the user to confirm the match — don't guess.
 - **Ordering by single unit is the default.** A checkout line without `quantity_unit` is
   `EA`; `{"unit":"BX"}` orders boxes (`contains` = box size, published in the variant's
   `sale_units[]`). When the supplier only quotes the box, the each price is derived
@@ -116,7 +116,7 @@ curl -s -X POST -H "$H" -H "$J" $U/catalog/lookup -d '{"ids":["acme-supply:10023
 **Machine product → purchasable sku**
 ```bash
 curl -s -H "$H" $U/skus/acme-machine:8837                                       # aliases + purchasable_from
-curl -s -X POST -H "$H" -H "$J" $U/skus/resolve -d '{"ids":["acme-machine:8837"],"to_namespace":"acme-supply"}'
+curl -s -X POST -H "$H" -H "$J" $U/catalog/lookup -d '{"ids":["acme-machine:8837","acme-machine:1"],"filters":{"location":"12345678"}}'   # variants[].aliases[] for many ids at once
 curl -s -X PUT -H "$H" -H "$J" $U/skus/acme-machine:8837/aliases -d '{"aliases":[{"sku_id":"acme-supply:10088"}]}'   # only after the user confirmed
 ```
 
@@ -126,8 +126,9 @@ curl -s -H "$H" "$U/orders?kind=sale&location=12345678&from=2026-09-09T00:00:00%
 curl -s -H "$H" $U/orders/po_20260909_001                                       # a purchase order: supplier_status + logistics
 ```
 
-**Replenishment**
+**Replenishment** (restock requests to the machine platform: `binding:false` = hint, `binding:true` = order it executes)
 ```bash
+curl -s -X POST -H "$H" -H "$J" $U/locations/12345678/restock -d '{"reference":"rs-20260910-1","binding":false,"line_items":[{"item":{"id":"acme-machine:8837"},"quantity":12,"reason":"sold out twice this week"}]}'
 curl -s -H "$H" $U/replenishment/plan                                           # lead_time.source measured|stated
 curl -s -X POST -H "$H" $U/replenishment/runs                                   # build a run (may create an approval)
 curl -s -X POST -H "$H" $U/replenishment/runs/run-1757404800000/place

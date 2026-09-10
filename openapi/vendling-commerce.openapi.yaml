@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Vendling Commerce API
-  version: "2026-09-10"
+  version: "2026-09-10 v2"
   summary: UCP-aligned commerce surface of vendling-core (supplier catalog, machine inventory, purchase checkout, orders, pricing, replenishment, approvals, events).
   description: |
     Machine-readable companion to `docs/commerce-api.md`. Standard capabilities follow the
@@ -12,7 +12,11 @@ info:
 
     Operations badged **核心** are the minimum set a route needs day to day (discovery, namespaces,
     locations, catalog, sales ledger, sync, replenishment plan, checkout create + complete, prices,
-    approvals, events) — 13 of the 34 operations. Everything else is a convenience; see the guide §2.1.
+    approvals, events) — 13 of the 32 operations. Everything else is a convenience; see the guide §2.1.
+
+    v2 (2026-09-10) removed the redundant `catalog/product`, `locations/lookup` and `skus/resolve`,
+    renamed restock recommendations to `POST /locations/{id}/restock` with a `binding` flag, and added the
+    zero-code HTTP vendor path (guide appendix A.6). Change log: guide appendix D.
 
     Partner badges say whose system an operation reaches through the adapter layer (guide §2.2):
     **售货机厂商** — vending-machine makers / machine-management platforms, who implement the `machine`
@@ -39,7 +43,7 @@ tags:
   - name: sku
     description: com.xiaopingfeng.vendling.sku — namespace registry, namespaced sku_id, sale units, cross-vendor aliases
   - name: location
-    description: dev.ucp.common.location.search / lookup (+ com.xiaopingfeng.vendling.location)
+    description: dev.ucp.common.location.search (+ com.xiaopingfeng.vendling.location)
   - name: checkout
     description: dev.ucp.shopping.checkout + dev.ucp.shopping.fulfillment (+ com.xiaopingfeng.vendling.approval)
   - name: order
@@ -130,42 +134,6 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "502": { $ref: "#/components/responses/Upstream" }
 
-  /catalog/product:
-    post:
-      tags: [catalog]
-      operationId: getProduct
-      x-badges:
-        - name: 售货机厂商
-          position: after
-          color: "#2563eb"
-        - name: 商品供应商
-          position: after
-          color: "#b45309"
-      summary: Full detail for one product or variant
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [id]
-              properties:
-                id: { type: string }
-                filters: { $ref: "#/components/schemas/CatalogFilters" }
-      responses:
-        "200":
-          description: Product
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [ucp, product]
-                properties:
-                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
-                  product: { $ref: "#/components/schemas/Product" }
-                  messages: { $ref: "#/components/schemas/Messages" }
-        "404": { $ref: "#/components/responses/NotFound" }
-
   /namespaces:
     get:
       tags: [sku]
@@ -230,49 +198,6 @@ paths:
               schema: { $ref: "#/components/schemas/SkuRecord" }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /skus/resolve:
-    post:
-      tags: [sku]
-      operationId: resolveSkus
-      x-badges:
-        - name: 售货机厂商
-          position: after
-          color: "#2563eb"
-        - name: 商品供应商
-          position: after
-          color: "#b45309"
-      summary: Resolve sku_ids into a target namespace through confirmed aliases (barcode or manual only)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids, to_namespace]
-              properties:
-                ids: { type: array, items: { $ref: "#/components/schemas/SkuId" }, minItems: 1, maxItems: 50 }
-                to_namespace: { $ref: "#/components/schemas/SkuNamespace" }
-      responses:
-        "200":
-          description: "Resolved pairs; `unresolved` is not an error here (it becomes `unresolved_sku` when a run is placed)"
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [ucp, resolved, unresolved]
-                properties:
-                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
-                  resolved:
-                    type: array
-                    items:
-                      type: object
-                      required: [from, to]
-                      properties:
-                        from: { $ref: "#/components/schemas/SkuId" }
-                        to: { $ref: "#/components/schemas/SkuId" }
-                  unresolved: { type: array, items: { $ref: "#/components/schemas/SkuId" } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-
   /skus/{sku_id}/aliases:
     parameters: [{ $ref: "#/components/parameters/SkuIdPath" }]
     put:
@@ -333,28 +258,6 @@ paths:
                       type: object
                       properties: { open_at: { type: string, format: date-time } }
                 pagination: { $ref: "#/components/schemas/PaginationRequest" }
-      responses:
-        "200":
-          description: Locations
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/LocationsResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-
-  /locations/lookup:
-    post:
-      tags: [location]
-      operationId: lookupLocations
-      summary: Retrieve machines by id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids: { type: array, items: { type: string }, maxItems: 50 }
       responses:
         "200":
           description: Locations
@@ -580,16 +483,16 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "502": { $ref: "#/components/responses/Upstream" }
 
-  /locations/{id}/restock-recommendations:
+  /locations/{id}/restock:
     parameters: [{ $ref: "#/components/parameters/LocationId" }]
     post:
       tags: [replenishment]
-      operationId: recommendRestock
+      operationId: restock
       x-badges:
         - name: 售货机厂商
           position: after
           color: "#2563eb"
-      summary: Push a restock recommendation into the supplier's own ops queue (no money; kill switch applies)
+      summary: Ask the machine platform to put goods into a machine — a hint for its field team (binding false) or an order it executes and reports back on (binding true). No money; kill switch applies.
       requestBody:
         required: true
         content:
@@ -598,20 +501,21 @@ paths:
               type: object
               required: [reference, line_items]
               properties:
-                reference: { type: string, description: Supplier wholesale number (`wholesaleNo`) }
+                reference: { type: string, description: Your idempotent restock reference }
+                binding: { type: boolean, default: false, description: "false = recommendation (capability replenishment.recommend); true = binding order the platform executes (replenishment.order). A platform that does not take the requested form answers 400 namespace_unsupported." }
                 line_items:
                   type: array
                   minItems: 1
                   items:
                     type: object
-                    required: [item, quantity, reason]
+                    required: [item, quantity]
                     properties:
-                      item: { $ref: "#/components/schemas/ItemRef" }
+                      item: { $ref: "#/components/schemas/ItemRef", description: "A machine-namespace sku; one namespace per request" }
                       quantity: { type: integer, minimum: 1 }
-                      reason: { type: string, maxLength: 100 }
+                      reason: { type: string, maxLength: 100, description: "Required on a recommendation, optional on a binding order" }
       responses:
         "200":
-          description: Accepted count
+          description: Accepted
           content:
             application/json:
               schema:
@@ -620,7 +524,10 @@ paths:
                   ucp: { $ref: "#/components/schemas/UcpEnvelope" }
                   location: { type: string }
                   reference: { type: string }
+                  binding: { type: boolean }
                   accepted: { type: integer }
+                  external_ref: { type: string, description: The platform's own order number (binding requests) }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/KillSwitch" }
         "502": { $ref: "#/components/responses/Upstream" }
 

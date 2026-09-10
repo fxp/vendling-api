@@ -21,7 +21,7 @@ Examples:
   python3 vendling_client.py inventory --vm 12345678                # default machine namespace
   python3 vendling_client.py catalog --keyword 乌龙 --limit 10        # default supply namespace
   python3 vendling_client.py sku acme-machine:8837
-  python3 vendling_client.py resolve acme-machine:8837 --to acme-supply
+  python3 vendling_client.py lookup acme-machine:8837 --vm 12345678     # variants[].aliases[] → purchasable
   python3 vendling_client.py orders --vm 12345678 --from 2026-09-09T00:00:00+08:00 --to 2026-09-09T23:59:59+08:00
   python3 vendling_client.py plan
   python3 vendling_client.py approvals
@@ -145,10 +145,6 @@ def sku(sku_id: str, location: str | None = None):
     return ucp("GET", f"/skus/{urllib.parse.quote(sku_id, safe='')}", query={"location": location})
 
 
-def resolve(ids: list[str], to_namespace: str | None = None):
-    return ucp("POST", "/skus/resolve", {"ids": ids, "to_namespace": to_namespace or defaults()["supply"]})
-
-
 def set_aliases(sku_id: str, aliases: list[str], source: str = "manual"):
     return ucp("PUT", f"/skus/{urllib.parse.quote(sku_id, safe='')}/aliases", {"aliases": [{"sku_id": a, "source": source} for a in aliases]})
 
@@ -207,9 +203,10 @@ def receive_run(run_id: str, delivered: list[dict], note: str | None = None):
     return ucp("POST", f"/replenishment/runs/{run_id}/receive", {"delivered": delivered, **({"note": note} if note else {})})
 
 
-def restock_recommend(vm_id: str, reference: str, lines: list[dict]):
-    """lines = [{"sku_id": "acme-machine:8837", "quantity": 12, "reason": "..."}]"""
-    return ucp("POST", f"/locations/{vm_id}/restock-recommendations", {"reference": reference, "line_items": [{"item": {"id": l["sku_id"]}, "quantity": l["quantity"], "reason": l["reason"]} for l in lines]})
+def restock(vm_id: str, reference: str, lines: list[dict], binding: bool = False):
+    """lines = [{"sku_id": "acme-machine:8837", "quantity": 12, "reason": "..."}]; binding=True asks the platform to execute (its external_ref comes back)."""
+    items = [{"item": {"id": l["sku_id"]}, "quantity": l["quantity"], **({"reason": l["reason"]} if l.get("reason") else {})} for l in lines]
+    return ucp("POST", f"/locations/{vm_id}/restock", {"reference": reference, "binding": binding, "line_items": items})
 
 
 # ── checkout (money) ──────────────────────────────────────────────────────
@@ -271,7 +268,6 @@ def main(argv=None):
     sp = sub.add_parser("catalog"); sp.add_argument("--keyword"); sp.add_argument("--limit", type=int, default=20); sp.add_argument("--namespace")
     sp = sub.add_parser("lookup"); sp.add_argument("ids", nargs="+"); sp.add_argument("--vm")
     sp = sub.add_parser("sku"); sp.add_argument("sku_id"); sp.add_argument("--vm")
-    sp = sub.add_parser("resolve"); sp.add_argument("ids", nargs="+"); sp.add_argument("--to")
     sp = sub.add_parser("alias"); sp.add_argument("sku_id"); sp.add_argument("--is", dest="aliases", action="append", required=True); sp.add_argument("--source", default="manual")
     sp = sub.add_parser("orders"); sp.add_argument("--vm"); sp.add_argument("--from", dest="start", required=True); sp.add_argument("--to", dest="end", required=True); sp.add_argument("--trade-status", default="settled")
     sp = sub.add_parser("order"); sp.add_argument("order_id")
@@ -286,7 +282,7 @@ def main(argv=None):
     sub.add_parser("build-run")
     sp = sub.add_parser("place"); sp.add_argument("--run", required=True)
     sp = sub.add_parser("receive"); sp.add_argument("--run", required=True); sp.add_argument("--slot", action="append", required=True, help="slotId=qty"); sp.add_argument("--note")
-    sp = sub.add_parser("recommend"); sp.add_argument("--vm", required=True); sp.add_argument("--ref", required=True); sp.add_argument("--item", action="append", required=True, help="sku_id=qty=reason")
+    sp = sub.add_parser("restock"); sp.add_argument("--vm", required=True); sp.add_argument("--ref", required=True); sp.add_argument("--binding", action="store_true", help="a binding order the platform executes (default: recommendation)"); sp.add_argument("--item", action="append", required=True, help="sku_id=qty[=reason]")
     sp = sub.add_parser("checkout"); sp.add_argument("--po"); sp.add_argument("--item", action="append", required=True, help="sku_idxQTY[:box|:each]")
     sp.add_argument("--contact"); sp.add_argument("--phone"); sp.add_argument("--address"); sp.add_argument("--pickup-slot", help="options[].id from a previous response")
     sp = sub.add_parser("get-checkout"); sp.add_argument("--po", required=True)
@@ -302,7 +298,6 @@ def main(argv=None):
         elif a.cmd == "catalog": out = catalog(a.keyword, a.limit, a.namespace)
         elif a.cmd == "lookup": out = lookup(a.ids, a.vm)
         elif a.cmd == "sku": out = sku(a.sku_id, a.vm)
-        elif a.cmd == "resolve": out = resolve(a.ids, a.to)
         elif a.cmd == "alias": out = set_aliases(a.sku_id, a.aliases, a.source)
         elif a.cmd == "orders": out = orders(a.start, a.end, a.vm, a.trade_status)
         elif a.cmd == "order": out = order(a.order_id)
@@ -317,12 +312,12 @@ def main(argv=None):
         elif a.cmd == "build-run": out = build_run()
         elif a.cmd == "place": out = place_run(a.run)
         elif a.cmd == "receive": out = receive_run(a.run, [{"slot_id": s.split("=")[0], "quantity": int(s.split("=")[1])} for s in a.slot], a.note)
-        elif a.cmd == "recommend":
+        elif a.cmd == "restock":
             lines = []
             for it in a.item:
-                sid, qty, reason = it.split("=", 2)
-                lines.append({"sku_id": _with_ns(sid, "machine"), "quantity": int(qty), "reason": reason})
-            out = restock_recommend(a.vm, a.ref, lines)
+                parts = it.split("=", 2)
+                lines.append({"sku_id": _with_ns(parts[0], "machine"), "quantity": int(parts[1]), "reason": parts[2] if len(parts) > 2 else None})
+            out = restock(a.vm, a.ref, lines, binding=a.binding)
         elif a.cmd == "checkout":
             shipping = {"street_address": a.address, "first_name": a.contact, "phone_number": a.phone} if a.address else None
             out = create_checkout(a.po, [_parse_line(i) for i in a.item], shipping, a.pickup_slot)

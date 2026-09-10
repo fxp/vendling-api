@@ -17,7 +17,7 @@ The API itself is served by the (private) `vendling-core` repo at `https://vendl
 never name a vendor and use the placeholder `acme`. The standard surface follows the
 [Universal Commerce Protocol](https://ucp.dev) `2026-08-25` with `com.xiaopingfeng.vendling.*` extensions.
 
-**Start small.** 13 of the 34 operations are the core set a route runs on (guide §2.1, badged
+**Start small.** 13 of the 32 operations are the core set a route runs on (guide §2.1, badged
 **核心** in the reference, `## Core set` in the skill's endpoint reference). Wire those first.
 Machine makers and goods suppliers have their own view: guide §2.2 and the "我是售货机厂商" /
 "我是商品供应商" selector keep only the sections that reach their system; the reference badges
