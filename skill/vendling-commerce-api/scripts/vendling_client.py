@@ -117,7 +117,20 @@ def locations(items: list[str] | None = None):
 
 
 def inventory(vm_id: str, namespace: str | None = None):
+    """A machine's items as the operator's synced copy has them. Cheap, and
+    as fresh as the last sync. For what is on the shelf right now, use
+    shelves() instead."""
     return ucp("POST", "/catalog/search", {"filters": {"namespace": namespace or defaults()["machine"], "location": vm_id}, "pagination": {"limit": 100}})
+
+
+def shelves(vm_id: str):
+    """What is physically in the machine right now, read live from the
+    platform: current price and units left, per line.
+
+    Different source from inventory() above. When the two disagree,
+    something sold, jammed or was restocked since the last sync — which is
+    usually the thing you wanted to know."""
+    return ucp("GET", f"/locations/{urllib.parse.quote(vm_id, safe='')}/inventory")
 
 
 def catalog(keyword: str | None = None, limit: int = 20, namespace: str | None = None):

@@ -506,6 +506,80 @@ paths:
         "502": { $ref: "#/components/responses/Upstream" }
         "503": { $ref: "#/components/responses/GuardUnverifiable" }
 
+  /locations/{id}/inventory:
+    parameters: [{ $ref: "#/components/parameters/LocationId" }]
+    get:
+      tags: [catalog]
+      operationId: getLocationInventory
+      x-badges:
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
+      summary: Read what is physically in a machine right now, live from the vending platform
+      description: |
+        A direct read of one machine's shelves, straight from the platform that
+        runs it — every item, its current customer-facing price, and how many
+        are left.
+
+        Deliberately not the same source as `POST /catalog/search` with a
+        `location` filter, which answers from the operator's synced copy. This
+        goes to the machine. When the two disagree, the disagreement is the
+        useful information: it means something sold, jammed, or was restocked
+        since the last sync.
+
+        Read-only. It moves no money and changes nothing a customer sees, so it
+        is not confirm-gated and the kill switch does not apply.
+      responses:
+        "200":
+          description: The machine's current shelves
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ucp, location_id, items]
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  location_id: { type: string }
+                  read_at:
+                    type: string
+                    format: date-time
+                    description: When the platform was asked. There is no caching in front of this.
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/MachineStockItem" }
+              examples:
+                stocked:
+                  summary: A machine with three lines on the shelf
+                  value:
+                    ucp:
+                      version: "2026-08-25"
+                      status: success
+                      capabilities:
+                        com.xiaopingfeng.vendling.location: [{ version: "2026-09-09" }]
+                        com.xiaopingfeng.vendling.inventory: [{ version: "2026-09-09" }]
+                    location_id: "8837"
+                    read_at: "2026-09-10T17:42:11.000Z"
+                    items:
+                      - sku_id: "acme-machine:1"
+                        vendor_sku: "1"
+                        title: 可口可乐330ml
+                        barcodes: [{ type: EAN, value: "6928804011364" }]
+                        price: { amount: 270, currency: CNY }
+                        stock: 35
+                      - sku_id: "acme-machine:2"
+                        vendor_sku: "2"
+                        title: 百事可乐330ml
+                        price: { amount: 260, currency: CNY }
+                        stock: 16
+                      - sku_id: "acme-machine:31"
+                        vendor_sku: "31"
+                        title: 三得利无糖乌龙茶500ml
+                        price: { amount: 500, currency: CNY }
+                        stock: 0
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/Upstream" }
+
   /locations/{id}/restock-recommendations:
     parameters: [{ $ref: "#/components/parameters/LocationId" }]
     post:
@@ -1300,6 +1374,34 @@ components:
       properties:
         available: { type: boolean }
         status: { type: string, enum: [in_stock, out_of_stock, backorder, preorder, discontinued] }
+    MachineStockItem:
+      type: object
+      description: One line on a machine's shelf, as the platform reports it right now.
+      required: [sku_id, title, price, stock]
+      properties:
+        sku_id: { $ref: "#/components/schemas/SkuId" }
+        vendor_sku:
+          type: string
+          description: The platform's own product id, unwrapped from `sku_id`. Opaque; never parse it.
+        title: { type: string }
+        barcodes:
+          type: array
+          items:
+            type: object
+            required: [type, value]
+            properties:
+              type: { type: string, example: EAN }
+              value: { type: string }
+        price:
+          allOf: [{ $ref: "#/components/schemas/Price" }]
+          description: What a customer standing at the machine pays right now.
+        stock:
+          type: integer
+          minimum: 0
+          description: Units left on the shelf. `0` means the line exists but is sold out — a line that is not stocked at all is simply absent.
+        slot_id:
+          type: string
+          description: Where in the machine it sits (lane, or layer+position on an open-door cabinet). Absent on platforms that do not report position.
     UnitPrice:
       type: object
       description: Price per single unit inside a pack (UCP unit_price; unit EA = each)

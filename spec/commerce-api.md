@@ -115,6 +115,7 @@ UCP 只定义两个角色：**Platform**（消费能力的一方）和 **Busines
 |---|---|---|---|---|
 | `GET /.well-known/ucp`、`GET /namespaces` | §4、§5.4 | 你的命名空间 `<vendor>-machine` 出现在这里 | 你的命名空间 `<vendor>-supply` 出现在这里 | ★ 入口 |
 | `POST /catalog/search`（`machine` 命名空间） | §5.2 | ★ 数据来自你的 `inventory(locationId)` | | ★ 机器里有什么 |
+| `GET /locations/{id}/inventory` | §5.2.1 | ★ 同一个 `inventory(locationId)`，但是实时直读，不经同步副本 | | ★ 机器**现在**有什么 |
 | `POST /catalog/search`（`supply` 命名空间） | §5.1 | | ★ 数据来自你的 `catalog()`；按个 / 按箱两种售卖单位 | ★ 能买什么 |
 | `POST /catalog/lookup`、`POST /catalog/product` | §5.3 | 同上 | 同上 | 便利 |
 | `GET /skus/{id}`、`POST /skus/resolve`、`PUT …/aliases` | §5.4 | 条码是机器 SKU 与供货 SKU 之间的桥，`MachineItem.barcode` 请给全 | 目录里给出条码，别名就能自动对上 | 便利 |
@@ -439,6 +440,41 @@ POST /catalog/search
 
 **已知陷阱**：有的机器平台对**不存在的机器号也返回成功**。适配层用账户级交易流水做交叉检查：一个在同步窗口内
 没有任何流水的机器号会在 `messages[]` 里得到 `type: "warning"`、`code: "location_unverified"`。
+
+#### 5.2.1 直接读货道（实时）
+
+上面那条 `POST /catalog/search` 答的是运营方**同步副本**里的机器状态，带别名、箱规、货道锁，
+适合"缺货了该向谁采购"这类需要跨命名空间的问题。当你要问的只是最直白的那句
+——"这台机器现在有什么、多少钱、还剩几个"——用这条：
+
+```http
+GET /locations/12345678/inventory
+```
+
+```json
+{
+  "ucp": { "version": "2026-08-25", "status": "success", "capabilities": { "com.xiaopingfeng.vendling.inventory": [{ "version": "2026-09-09" }] } },
+  "location_id": "12345678",
+  "read_at": "2026-09-10T17:42:11.000Z",
+  "items": [
+    { "sku_id": "acme-machine:8837", "vendor_sku": "8837", "title": "红牛 250ml",
+      "barcodes": [{ "type": "EAN", "value": "6920202888883" }],
+      "price": { "amount": 600, "currency": "CNY" }, "stock": 7 }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `read_at` | 问平台的时刻。这条前面没有缓存 |
+| `items[].price` | 此刻站在机器前的顾客要付的价 |
+| `items[].stock` | 货道剩余。`0` 表示这条货道存在但卖空了；根本没上的货不会出现在列表里 |
+| `items[].slot_id` | 机器里的位置。平台不报位置时这个字段不出现 |
+
+**两者是不同的数据源，不是同一份数据的两种格式**：这条直接问机器，`/catalog/search` 答的是上一次同步。
+两边对不上的时候，那个差本身就是信息——说明上次同步之后有东西卖掉了、卡货了，或者被补过货。
+
+只读。不动钱、不改顾客看得见的东西，所以不需要 `confirm`，kill switch 也不管它。
 
 ### 5.3 Lookup
 <!-- profiles: machine,supply -->
