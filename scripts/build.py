@@ -112,7 +112,7 @@ aside .toc a.off{opacity:.4}
 pre.mermaid{background:transparent;border:0;padding:0;overflow:visible;text-align:center}pre.mermaid svg{max-width:100%;height:auto}
 pre.mermaid svg .actor{fill:var(--side)!important;stroke:var(--accent)!important}
 pre.mermaid svg text.actor,pre.mermaid svg text.actor>tspan{fill:var(--fg)!important;stroke:none!important}
-pre.mermaid svg .actor-line{stroke:var(--fg-mute)!important}
+pre.mermaid svg .actor-line,pre.mermaid svg line[id^=actor]{stroke:var(--fg-mute)!important;stroke-dasharray:2 4}
 pre.mermaid svg .messageLine0,pre.mermaid svg .messageLine1{stroke:var(--fg-dim)!important}
 pre.mermaid svg #arrowhead path,pre.mermaid svg .arrowheadPath,pre.mermaid svg #filled-head path,pre.mermaid svg #crosshead path{fill:var(--fg-dim)!important;stroke:var(--fg-dim)!important}
 pre.mermaid svg .messageText,pre.mermaid svg .messageText>tspan{fill:var(--fg)!important;stroke:none!important}
