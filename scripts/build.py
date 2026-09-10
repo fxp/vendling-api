@@ -217,7 +217,14 @@ light:{background:"transparent",actorBkg:"#f5f2eb",actorBorder:"#b8452b",actorTe
 async function render(){const m=mode();mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"base",darkMode:m==="dark",themeVariables:VARS[m],fontFamily:"inherit",sequence:{useMaxWidth:true,mirrorActors:false,messageFontSize:14,noteFontSize:13,actorFontSize:15}});
 for(const p of pres){p.removeAttribute("data-processed");p.textContent=p.dataset.src}
 try{await mermaid.run({nodes:pres})}catch(e){console.warn("mermaid",e)}}
-render();new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:["data-mode"]});
+function rgb(h){return "rgb("+[1,3,5].map(i=>parseInt(h.substr(i,2),16)).join(", ")+")"}
+function themed(){const a=document.querySelector("pre.mermaid svg rect.actor");return !a||getComputedStyle(a).fill===rgb(VARS[mode()].actorBkg)}
+// The very first run on a page sometimes comes out in mermaid's stock
+// palette even though the config already carries ours; a second run
+// always applies it. Verify by reading one actor's fill and redo once.
+async function ensure(){await render();if(!themed())await render()}
+ensure();addEventListener("load",()=>setTimeout(()=>{if(!themed())render()},400));
+new MutationObserver(ensure).observe(document.documentElement,{attributes:true,attributeFilter:["data-mode"]});
 """ % MERMAID_VERSION
 
 
