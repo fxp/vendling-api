@@ -19,6 +19,9 @@ never name a vendor and use the placeholder `acme`. The standard surface follows
 
 **Start small.** 13 of the 34 operations are the core set a route runs on (guide §2.1, badged
 **核心** in the reference, `## Core set` in the skill's endpoint reference). Wire those first.
+Machine makers and goods suppliers have their own view: guide §2.2 and the "我是售货机厂商" /
+"我是商品供应商" selector keep only the sections that reach their system; the reference badges
+operations **售货机厂商** / **商品供应商** accordingly.
 
 ## Set an agent up in one line
 

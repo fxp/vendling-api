@@ -41,6 +41,18 @@ The route runs day to day on these 13 operations; wire them first and treat the 
 | ★ | `GET /approvals` · `POST /approvals/{id}` | human in the loop for over-budget / over-cap actions | chat approval cards, dashboard |
 | ★ | `GET /events` | audit line: every decision, sale, error | dashboard live feed, weekly letter |
 
+## Partner view
+
+Which operations reach whose system through the adapter layer (guide §2.2). Upstream partners never call
+these routes themselves; they implement an adapter (`machine` or `supply` role) and the routes are translated
+into its methods.
+
+| Partner | Implements | Operations that end up in their system |
+|---|---|---|
+| Vending-machine maker / machine-management platform | `machine` adapter: `inventory`, `ledger`, `updatePrices`, `restockRecommend`; namespace `<vendor>-machine` | `POST /catalog/search|lookup|product` (machine ns), `POST /locations/sync`, `GET /orders?kind=sale`, `PUT /locations/{id}/prices`, `POST /locations/{id}/restock-recommendations`; barcodes in `MachineItem.barcode` feed `/skus/resolve` |
+| Goods supplier / wholesale platform | `supply` adapter: `catalog`, `createOrder`, `orderStatus`; namespace `<vendor>-supply` | `POST /catalog/search|lookup|product` (supply ns), `POST /checkout-sessions` → `…/complete` (→ `createOrder`, shipping or pickup), `GET /orders/{id}` purchase (→ `orderStatus`); catalog barcodes + `packSize` drive aliases and EA/BX |
+| Operator / agent developer | nothing upstream — calls the routes | the core set above, plus replenishment runs, approvals, events |
+
 ## Checkout status machine
 
 `incomplete` → `requires_escalation` (owner approval: over budget, probation) → `ready_for_complete` →

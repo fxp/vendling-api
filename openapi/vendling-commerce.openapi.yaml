@@ -13,6 +13,11 @@ info:
     Operations badged **核心** are the minimum set a route needs day to day (discovery, namespaces,
     locations, catalog, sales ledger, sync, replenishment plan, checkout create + complete, prices,
     approvals, events) — 13 of the 34 operations. Everything else is a convenience; see the guide §2.1.
+
+    Partner badges say whose system an operation reaches through the adapter layer (guide §2.2):
+    **售货机厂商** — vending-machine makers / machine-management platforms, who implement the `machine`
+    adapter (inventory, ledger, prices, restock recommendations); **商品供应商** — goods suppliers /
+    wholesale platforms, who implement the `supply` adapter (catalog, purchase orders, order status).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -75,6 +80,12 @@ paths:
         - name: 核心
           position: before
           color: "#0f766e"
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Search a supplier catalog (a supply namespace) or one machine's live inventory (a machine namespace), selected by filters.namespace
       parameters: [{ $ref: "#/components/parameters/UcpAgent" }]
       requestBody:
@@ -96,6 +107,13 @@ paths:
     post:
       tags: [catalog]
       operationId: lookupCatalog
+      x-badges:
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Batch lookup by sku_id (max 50); may span namespaces, dispatched by prefix
       parameters: [{ $ref: "#/components/parameters/UcpAgent" }]
       requestBody:
@@ -116,6 +134,13 @@ paths:
     post:
       tags: [catalog]
       operationId: getProduct
+      x-badges:
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Full detail for one product or variant
       requestBody:
         required: true
@@ -149,6 +174,12 @@ paths:
         - name: 核心
           position: before
           color: "#0f766e"
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: The vendor namespaces this deployment serves, and the defaults
       responses:
         "200":
@@ -183,6 +214,13 @@ paths:
     get:
       tags: [sku]
       operationId: getSku
+      x-badges:
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Identity, barcodes, aliases and purchasable sources of one sku_id
       responses:
         "200":
@@ -196,6 +234,13 @@ paths:
     post:
       tags: [sku]
       operationId: resolveSkus
+      x-badges:
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Resolve sku_ids into a target namespace through confirmed aliases (barcode or manual only)
       requestBody:
         required: true
@@ -326,6 +371,9 @@ paths:
         - name: 核心
           position: before
           color: "#0f766e"
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
       summary: Pull live inventory + sales for every registered machine now (extension)
       requestBody:
         content:
@@ -408,6 +456,9 @@ paths:
         - name: 核心
           position: before
           color: "#0f766e"
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
       summary: Change live customer-facing prices on a machine (real write; confirm + kill switch + price cap)
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -460,6 +511,10 @@ paths:
     post:
       tags: [replenishment]
       operationId: recommendRestock
+      x-badges:
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
       summary: Push a restock recommendation into the supplier's own ops queue (no money; kill switch applies)
       requestBody:
         required: true
@@ -503,6 +558,9 @@ paths:
         - name: 核心
           position: before
           color: "#0f766e"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Open a wholesale purchase-order session (nothing is spent until /complete)
       parameters:
         - { $ref: "#/components/parameters/UcpAgent" }
@@ -559,6 +617,9 @@ paths:
         - name: 核心
           position: before
           color: "#0f766e"
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Place the real wholesale order (spends money; confirm + kill switch + budget guard)
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -615,6 +676,9 @@ paths:
         - name: 核心
           position: before
           color: "#0f766e"
+        - name: 售货机厂商
+          position: after
+          color: "#2563eb"
       summary: List orders (extension). `kind=sale` reads the machine transaction ledger.
       parameters:
         - { name: kind, in: query, schema: { type: string, enum: [sale, purchase], default: sale } }
@@ -644,6 +708,10 @@ paths:
     get:
       tags: [order]
       operationId: getOrder
+      x-badges:
+        - name: 商品供应商
+          position: after
+          color: "#b45309"
       summary: Current-state snapshot of a purchase order (supplier logistics) or a machine sale
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }

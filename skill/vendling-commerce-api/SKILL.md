@@ -36,6 +36,9 @@ Machine-readable index: https://vendling.dev/api/llms.txt.
 `GET /approvals` + `POST /approvals/{id}` · `GET /events`. These are what the Vendling route itself
 runs on every day (hourly sync, 5-minute order polling, the daily plan, chat approvals) plus the
 only two actions that move money or change a live price. Everything else is a convenience.
+If the user is a machine maker or a goods supplier rather than an operator, they implement an
+adapter instead of calling routes — point them at the partner view in `references/ucp-endpoints.md`
+and guide §2.2 / Appendix A.
 
 Every response carries a `ucp` envelope; read `messages[]` before the data
 (`references/errors.md`). If `/.well-known/ucp` returns 404 the standard routes aren't

@@ -103,6 +103,7 @@ img{max-width:100%;height:auto}
 .devsel .lbl{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-mute);margin-right:4px}
 .devsel button{font:13px/1 inherit;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg-dim);cursor:pointer}
 .devsel button:hover{border-color:var(--accent)}.devsel button.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.devsel .sep{width:1px;height:18px;background:var(--line);margin:0 2px}
 .devsel .hint{flex-basis:100%;font-size:13px;color:var(--fg-mute);margin-top:2px}
 section.off>*:not(h2):not(h3){display:none}section.off h2,section.off h3{opacity:.45}
 section.off h2::after,section.off h3::after{content:" · 与所选设备无关";font-size:12px;font-weight:400;color:var(--fg-mute)}
@@ -121,7 +122,7 @@ var links=[].slice.call(document.querySelectorAll('aside .toc a'));var heads=lin
 function mark(){var y=window.scrollY+90,best=null;heads.forEach(function(el){if(el.offsetTop<=y)best=el});links.forEach(function(a){a.classList.toggle('here',!!best&&decodeURIComponent(a.getAttribute('href').slice(1))===best.id)});
 var on=document.querySelector('aside .toc a.here');if(on){var r=on.getBoundingClientRect(),s=on.closest('aside');if(r.top<60||r.bottom>innerHeight-40)on.scrollIntoView({block:'center'})}}
 addEventListener('scroll',mark,{passive:true});mark();
-var sel=document.querySelector('.devsel');if(sel){var K='vendling.docs.device',HINT={all:'显示全部章节。',machine:'你运营的机器由一个平台管理：库存、交易流水、改价、补货推荐走 machine 命名空间。',supply:'你有供货方或采购渠道：供货方目录、结账下单、采购单状态走 supply 命名空间。',adapter:'你的设备或供货方还没有适配器：看通用约定、命名空间与附录 A 的适配器契约。'};
+var sel=document.querySelector('.devsel');if(sel){var K='vendling.docs.device',HINT={all:'显示全部章节。',machine:'你运营的机器由一个平台管理：库存、交易流水、改价、补货推荐走 machine 命名空间。',supply:'你有供货方或采购渠道：供货方目录、结账下单、采购单状态走 supply 命名空间。',adapter:'你的设备或供货方还没有适配器：看通用约定、命名空间与附录 A 的适配器契约。','vendor-machine':'你做售货机或机器管理平台：实现附录 A.3 的 machine 适配器，向 Vendling 提供库存、交易流水、改价、补货推荐；只保留与你相关的章节。','vendor-supply':'你是商品供应商或批发平台：实现附录 A.2 的 supply 适配器，向 Vendling 提供目录、接采购单、回传订单状态；只保留与你相关的章节。'};
 function apply(d){document.querySelectorAll('section[data-profiles]').forEach(function(s){var ps=s.getAttribute('data-profiles').split(',');var on=d==='all'||ps.indexOf('all')>=0||ps.indexOf(d)>=0;s.classList.toggle('off',!on);var h=s.querySelector('h2,h3');if(h){var a=document.querySelector('aside .toc a[href="#'+CSS.escape(h.id)+'"]');if(a)a.classList.toggle('off',!on)}});
 sel.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-device')===d)});var hn=sel.querySelector('.hint');if(hn)hn.textContent=HINT[d]||'';localStorage.setItem(K,d)}
 sel.addEventListener('click',function(e){var b=e.target.closest('button[data-device]');if(b)apply(b.getAttribute('data-device'))});
@@ -245,11 +246,14 @@ def build_guide(site: Site) -> str:
     body, toc = render_md(src)
     body = wrap_profiles(body)
     selector = (
-        '<div class="devsel" role="group" aria-label="我有什么"><span class="lbl">我有什么</span>'
+        '<div class="devsel" role="group" aria-label="我是谁"><span class="lbl">我是谁</span>'
         '<button data-device="all" class="on">全部</button>'
         '<button data-device="machine">我运营售货机</button>'
         '<button data-device="supply">我有供货 / 采购渠道</button>'
         '<button data-device="adapter">我要接入新设备或供货方</button>'
+        '<span class="sep"></span>'
+        '<button data-device="vendor-machine">我是售货机厂商</button>'
+        '<button data-device="vendor-supply">我是商品供应商</button>'
         '<span class="hint">显示全部章节。</span></div>'
     )
     setup = (

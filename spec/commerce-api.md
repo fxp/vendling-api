@@ -19,7 +19,7 @@
 ## 0. 目录
 
 1. [对齐原则](#1-对齐原则)
-2. [角色与方向](#2-角色与方向)：§2.1 最小接入集（先看这个）
+2. [角色与方向](#2-角色与方向)：§2.1 最小接入集（先看这个）、§2.2 合作伙伴视角
 3. [通用约定](#3-通用约定)：信封、鉴权、头、金额、时间、SKU 命名空间、分页、错误
 4. [发现档案 `/.well-known/ucp`](#4-发现档案-well-knownucp)
 5. [目录 Catalog](#5-目录-catalog)：供货方 SKU 清单、机器库存、SKU 注册表
@@ -102,6 +102,39 @@ UCP 只定义两个角色：**Platform**（消费能力的一方）和 **Busines
 
 不在表里但值得知道的两点：`POST /events` 是顾客界面写"想要什么"意图的通道，属于内部桥接而非接入必需；
 `POST /replenishment/runs/{id}/place` 今天只把行程交给模拟供货方，真实采购走 §7。
+
+### 2.2 合作伙伴视角：谁该看哪些接口
+
+三类外部伙伴接触本规范的方式不同。**售货机厂商 / 机器管理平台**和**商品供应商 / 批发平台**站在上游：只需要让自己的
+系统能被一个适配器（附录 A）翻译成规范的形状，不必自己讲 UCP。**运营者和 Agent 开发者**站在下游，直接调用标准接口。
+页面顶部选"我是售货机厂商"或"我是商品供应商"会只保留各自相关的章节；API Reference 里对应操作带 **售货机厂商** /
+**商品供应商** 徽标（★ = §2.1 的核心接口）。
+
+| 接口 | 章节 | 售货机厂商 / 机器平台 | 商品供应商 / 批发平台 | 运营者 / Agent 开发者 |
+|---|---|---|---|---|
+| `GET /.well-known/ucp`、`GET /namespaces` | §4、§5.4 | 你的命名空间 `<vendor>-machine` 出现在这里 | 你的命名空间 `<vendor>-supply` 出现在这里 | ★ 入口 |
+| `POST /catalog/search`（`machine` 命名空间） | §5.2 | ★ 数据来自你的 `inventory(locationId)` | | ★ 机器里有什么 |
+| `POST /catalog/search`（`supply` 命名空间） | §5.1 | | ★ 数据来自你的 `catalog()`；按个 / 按箱两种售卖单位 | ★ 能买什么 |
+| `POST /catalog/lookup`、`POST /catalog/product` | §5.3 | 同上 | 同上 | 便利 |
+| `GET /skus/{id}`、`POST /skus/resolve`、`PUT …/aliases` | §5.4 | 条码是机器 SKU 与供货 SKU 之间的桥，`MachineItem.barcode` 请给全 | 目录里给出条码，别名就能自动对上 | 便利 |
+| `POST /locations/search`、`PUT /locations/{id}` | §6 | `locationId` 就是你的机器编号 | | ★ 有哪些机器 |
+| `POST /locations/sync` | §6 | ★ 每小时调用你的 `inventory` + `ledger` | | ★ 刷新线路状态 |
+| `POST /checkout-sessions` → `POST …/complete` | §7 | | ★ 变成你的 `createOrder(ref, lines, fulfillment)`：快递或自提 | ★ 花真钱 |
+| `GET /orders/{id}`（`kind: purchase`） | §8.1 | | 变成你的 `orderStatus(ref)`，含物流 | 便利 |
+| `GET /orders?kind=sale` | §8.2 | ★ 数据来自你的 `ledger()`，账户级交易流水 | | ★ 需求信号 |
+| `PUT /locations/{id}/prices` | §9 | ★ 变成你的 `updatePrices()`，真实改价 | | ★ 改真价 |
+| `POST /locations/{id}/restock-recommendations` | §10.3 | 变成你的 `restockRecommend()`，给你的运维团队 | | 便利 |
+| `GET /replenishment/plan`、`/replenishment/runs…` | §10.1–10.2 | | | ★ 计划；行程 |
+| `GET /approvals`、`POST /approvals/{id}` | §11 | | | ★ 人在回路 |
+| `GET /events`、`POST /events` | §12 | | | ★ 审计线 |
+
+**售货机厂商 / 机器管理平台要做的**：实现附录 A.3 的四个方法（`inventory`、`ledger`、`updatePrices`、`restockRecommend`），
+登记命名空间 `<vendor>-machine`（A.4）。不需要理解结账、采购单、补货计划——那些在你之上。
+
+**商品供应商 / 批发平台要做的**：实现附录 A.2 的三个方法（`catalog`、`createOrder`、`orderStatus`），登记 `<vendor>-supply`。
+目录请带条码和箱规（`packSize`），只按个卖就给 `packSize = 1`；`createOrder` 以采购单号 `ref` 幂等。不需要理解机器库存、改价、审批。
+
+**运营者 / Agent 开发者要做的**：从 §2.1 的最小接入集开始，用 `/.well-known/ucp` 发现命名空间，然后读 Agent Skill 或 OpenAPI。
 
 ---
 
@@ -306,7 +339,7 @@ namespace = "<vendor>-<role>"      role ∈ supply | machine
 | `machine` | 某台机器现在有什么：机内商品、零售价、余量 | 必须给 `filters.location` |
 
 ### 5.1 供货方 SKU 清单（`<vendor>-supply`）
-<!-- profiles: supply -->
+<!-- profiles: supply,vendor-supply -->
 
 ```http
 POST /catalog/search
@@ -363,7 +396,7 @@ POST /catalog/search
 `metadata.sites[]` 是供货方的提货点（附录 A `SupplySite`），自提时用作目的地 ID。
 
 ### 5.2 机器库存（`<vendor>-machine`）— 扩展 `com.xiaopingfeng.vendling.inventory`
-<!-- profiles: machine -->
+<!-- profiles: machine,vendor-machine -->
 
 ```http
 POST /catalog/search
@@ -407,6 +440,7 @@ POST /catalog/search
 没有任何流水的机器号会在 `messages[]` 里得到 `type: "warning"`、`code: "location_unverified"`。
 
 ### 5.3 Lookup
+<!-- profiles: machine,supply -->
 
 ```http
 POST /catalog/lookup
@@ -417,7 +451,7 @@ POST /catalog/lookup
 ID 去重；每个变体带 `inputs[]`（`exact` / `featured`）；超过 50 个 ID 返回 `400 request_too_large`。
 
 ### 5.4 命名空间与 SKU 注册表 — 扩展 `com.xiaopingfeng.vendling.sku`
-<!-- profiles: supply,machine,adapter -->
+<!-- profiles: supply,machine,adapter,vendor-machine,vendor-supply -->
 
 ```http
 GET /namespaces
@@ -452,7 +486,7 @@ GET /namespaces
 ---
 
 ## 6. 位置 Location
-<!-- profiles: machine -->
+<!-- profiles: machine,vendor-machine -->
 
 能力：`dev.ucp.common.location.search`、`dev.ucp.common.location.lookup` · 扩展：`com.xiaopingfeng.vendling.location`
 
@@ -490,7 +524,7 @@ UCP 的 Location 是"地图上找得到的实体"。一台售货机正是：有�
 ---
 
 ## 7. 结账 Checkout
-<!-- profiles: supply -->
+<!-- profiles: supply,vendor-supply -->
 
 能力：`dev.ucp.shopping.checkout` + `dev.ucp.shopping.fulfillment` · 扩展：`com.xiaopingfeng.vendling.approval`、`com.xiaopingfeng.vendling.sku`
 
@@ -620,7 +654,7 @@ POST /checkout-sessions/po_20260909_001/complete
 | Order Event Webhook | `POST` | 平台提供的 URL — **[缺]**，见 §12 |
 
 ### 8.1 采购单（`kind: purchase`）
-<!-- profiles: supply -->
+<!-- profiles: supply,vendor-supply -->
 
 ```json
 {
@@ -657,7 +691,7 @@ POST /checkout-sessions/po_20260909_001/complete
 `supplier_status`（原始码 + 描述）和 `logistics[]`（原样透传）是扩展字段，供排障用。
 
 ### 8.2 机器交易（`kind: sale`）
-<!-- profiles: machine -->
+<!-- profiles: machine,vendor-machine -->
 
 ```http
 GET /orders?kind=sale&location=12345678&from=2026-09-09T00:00:00%2B08:00&to=2026-09-09T23:59:59%2B08:00&limit=100
@@ -710,7 +744,7 @@ GET /orders?kind=sale&location=12345678&from=2026-09-09T00:00:00%2B08:00&to=2026
 ---
 
 ## 9. 扩展：定价 Pricing
-<!-- profiles: machine -->
+<!-- profiles: machine,vendor-machine -->
 
 能力：`com.xiaopingfeng.vendling.pricing`
 
@@ -736,7 +770,7 @@ PUT /locations/12345678/prices
 ---
 
 ## 10. 扩展：补货 Replenishment
-<!-- profiles: machine,supply -->
+<!-- profiles: machine,supply,vendor-machine -->
 
 能力：`com.xiaopingfeng.vendling.replenishment`
 
@@ -757,6 +791,7 @@ PUT /locations/12345678/prices
 | 向机器平台推荐 | `POST` | `/locations/{id}/restock-recommendations` `{reference, line_items:[{item:{id}, quantity, reason}]}` |
 
 ### 10.1 计划
+<!-- profiles: machine,supply -->
 
 ```json
 {
@@ -774,6 +809,7 @@ PUT /locations/12345678/prices
 `lead_time.source` 是 `measured`（从历史行程实测）或 `stated`（样本不够，用参数），必须原样透出。`demand.measured = false` 表示需求率是从缺货期推断的。
 
 ### 10.2 行程（Run）
+<!-- profiles: machine,supply -->
 
 行程的形状**刻意贴近 UCP Order**：行项目、按机器分组的履约期望、追加式的履约事件、金额汇总。
 
@@ -791,6 +827,7 @@ PUT /locations/12345678/prices
 - `cost_is_estimated = true` 表示有行项目没有真实成本（用零售价 × 0.55 估的）；这个数字决定要不要审批，所以必须说明它是估的。
 
 ### 10.3 向机器平台的补货推荐
+<!-- profiles: machine,supply,vendor-machine -->
 
 - `item.id` 必须是 `machine` 角色；`reference` 是机器平台要求的批次号；`reason` 超过 100 字截断。
 - 不花钱、没有 `confirm`，但**受紧急停机约束**：它会推动别人去往机器里装货。
@@ -859,7 +896,7 @@ PUT /locations/12345678/prices
 ---
 
 ## 附录 A. 设备与供货方适配器契约
-<!-- profiles: adapter,supply,machine -->
+<!-- profiles: adapter,supply,machine,vendor-machine,vendor-supply -->
 
 Vendling 不直接依赖任何厂商接口。每个上游通过一个**适配器**接入，实现下面两个角色之一或两者；
 系统其余部分只见到这里的形状。Vendling 自带一个参考实现（一个机器平台 + 一个供货方），其厂商细节不在公开文档中。
@@ -872,6 +909,7 @@ Vendling 不直接依赖任何厂商接口。每个上游通过一个**适配器
 - 适配器只认自己的命名空间；上游的分页、时区、签名全部在适配器内部消化。
 
 ### A.2 角色 `supply`（命名空间 `<vendor>-supply`）
+<!-- profiles: adapter,supply,machine,vendor-supply -->
 
 | 方法 | 输入 | 输出 |
 |---|---|---|
@@ -887,6 +925,7 @@ SupplySite    { id, name?, address? }
 `packSize = 1` 表示只按个卖（目录里不会出现 `BX`）。只拿得到箱价时 `eachPriceFen = round(packPriceFen / packSize)` 且 `eachPriceDerived = true`。
 
 ### A.3 角色 `machine`（命名空间 `<vendor>-machine`）
+<!-- profiles: adapter,supply,machine,vendor-machine -->
 
 | 方法 | 输入 | 输出 |
 |---|---|---|
@@ -920,20 +959,24 @@ LedgerLine   { vendorSku, priceFen, costFen: number|null, status: "paid"|"unpaid
 
 ## 附录 B. 能力 × 设备类型矩阵
 
-页面顶部的"我有什么"选择器按这张表折叠不相关的章节。无论哪种设备，先接 §2.1 的最小接入集。
+页面顶部的"我是谁"选择器按这张表折叠不相关的章节。运营者无论哪种设备，先接 §2.1 的最小接入集；厂商和供应商看 §2.2。
 
-| 章节 | 我运营机器（`machine`） | 我有供货 / 采购渠道（`supply`） | 我要接入新设备或供货方（`adapter`） |
-|---|---|---|---|
-| §3 通用约定、§4 发现档案 | ✓ | ✓ | ✓ |
-| §5.1 供货方 SKU 清单 | | ✓ | |
-| §5.2 机器库存 | ✓ | | |
-| §5.3 Lookup | ✓ | ✓ | |
-| §5.4 命名空间与 SKU 注册表 | ✓ | ✓ | ✓ |
-| §6 位置 | ✓ | | |
-| §7 结账 | | ✓ | |
-| §8.1 采购单 | | ✓ | |
-| §8.2 机器交易 | ✓ | | |
-| §9 定价 | ✓ | | |
-| §10 补货 | ✓ | ✓ | |
-| §11 审批、§12 事件、§13 护栏 | ✓ | ✓ | ✓ |
-| 附录 A 适配器契约 | ✓ | ✓ | ✓ |
+| 章节 | 我运营机器（`machine`） | 我有供货 / 采购渠道（`supply`） | 我要接入新设备或供货方（`adapter`） | 我是售货机厂商（`vendor-machine`） | 我是商品供应商（`vendor-supply`） |
+|---|---|---|---|---|---|
+| §2.1 最小接入集、§2.2 合作伙伴视角 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| §3 通用约定、§4 发现档案 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| §5.1 供货方 SKU 清单 | | ✓ | | | ✓ |
+| §5.2 机器库存 | ✓ | | | ✓ | |
+| §5.3 Lookup | ✓ | ✓ | | | |
+| §5.4 命名空间与 SKU 注册表 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| §6 位置 | ✓ | | | ✓ | |
+| §7 结账 | | ✓ | | | ✓ |
+| §8.1 采购单 | | ✓ | | | ✓ |
+| §8.2 机器交易 | ✓ | | | ✓ | |
+| §9 定价 | ✓ | | | ✓ | |
+| §10.1 补货计划、§10.2 行程 | ✓ | ✓ | | | |
+| §10.3 补货推荐 | ✓ | ✓ | | ✓ | |
+| §11 审批、§12 事件、§13 护栏 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 附录 A.1 / A.4 / A.5 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 附录 A.2 `supply` 契约 | ✓ | ✓ | ✓ | | ✓ |
+| 附录 A.3 `machine` 契约 | ✓ | ✓ | ✓ | ✓ | |
