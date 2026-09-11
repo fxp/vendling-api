@@ -19,6 +19,7 @@ jobs:
         with: { node-version: "22", cache: npm }
       - run: npm ci
       - run: npx redocly lint openapi/vendling-commerce.openapi.yaml
+      - run: python3 scripts/check_docs.py
       - run: python3 scripts/build.py
       - run: npx wrangler deploy
         env:

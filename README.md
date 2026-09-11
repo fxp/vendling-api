@@ -36,8 +36,14 @@ Fetch and execute the appropriate instructions to set me up for Vendling from ht
 pip install markdown && npm ci
 npm run build           # → dist/  (python3 scripts/build.py)
 npm run deploy          # build + wrangler deploy → https://vendling.dev
-npm run lint:openapi    # Redocly
+npm run lint            # Redocly + the docs consistency checker
+npm run lint:docs       # scripts/check_docs.py alone
 ```
+
+`check_docs.py` is what keeps the copies honest: the same facts live in the guide, the OpenAPI and
+two offline skills on purpose, so it fails the build when they disagree — endpoint lists, the core
+set, operation counts, removed routes, vendor-name leaks, the A.6 contract, index coverage, section
+cross-references and partner badges.
 
 CI (`.github/workflows/deploy.yml`) does the same on every push to `main`, using the
 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` repository secrets.

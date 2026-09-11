@@ -169,10 +169,9 @@ curl -s -X POST -H "$H" -H "$J" $U/locations/sync -d '{"sales_window_days":30}'
 
 ## 5. Reading responses
 
-- `messages[]`: `type:"error"` with `severity:"requires_buyer_review"` → stop and show the
-  user; `recoverable` → fix the request once; `unrecoverable` → report. Warnings never block.
-- `502 supplier_rejected` carries the upstream message verbatim; never retry a money-moving
-  call without the user (the PO id is idempotent upstream, but the user decides).
+- `messages[]` first, data second. `requires_buyer_review` → stop and show the user;
+  `recoverable` → fix once; `unrecoverable` → report; warnings never block. Never retry a
+  money-moving call on your own. Full code table and reactions: `references/errors.md`.
 - `GET /replenishment/plan` says whether lead time is `measured` or `stated` and whether a
   demand rate is `measured`. Repeat that qualifier when you report numbers.
 - Cost/margin are never in catalog responses; `cost_is_estimated` on a run means exactly that.

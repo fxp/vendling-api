@@ -7,7 +7,9 @@
     "build": "python3 scripts/build.py",
     "build:mirror": "python3 scripts/build.py --mirror --out dist-mirror",
     "deploy": "python3 scripts/build.py && wrangler deploy",
-    "lint:openapi": "redocly lint openapi/vendling-commerce.openapi.yaml"
+    "lint:openapi": "redocly lint openapi/vendling-commerce.openapi.yaml",
+    "lint:docs": "python3 scripts/check_docs.py",
+    "lint": "npm run lint:openapi && npm run lint:docs"
   },
   "devDependencies": {
     "@redocly/cli": "^2.0.0",

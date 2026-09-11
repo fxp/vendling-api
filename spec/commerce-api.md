@@ -16,25 +16,80 @@
 
 ---
 
-## 0. 目录
+## 0. 索引
 
-1. [对齐原则](#1-对齐原则)
-2. [角色与方向](#2-角色与方向)：§2.1 最小接入集与五步接入（先看这个）、§2.2 合作伙伴视角、§2.3 接入流程
-3. [通用约定](#3-通用约定)：信封、鉴权、头、金额、时间、SKU 命名空间、分页、错误
-4. [发现档案 `/.well-known/ucp`](#4-发现档案-well-knownucp)
-5. [目录 Catalog](#5-目录-catalog)：供货方 SKU 清单、机器库存、SKU 注册表
-6. [位置 Location](#6-位置-location)：机器即门店
-7. [结账 Checkout](#7-结账-checkout)：向供货方下采购单
-8. [订单 Order](#8-订单-order)：采购单状态、机器交易流水
-9. [扩展：定价 Pricing](#9-扩展定价-pricing)
-10. [扩展：补货 Replenishment](#10-扩展补货-replenishment)
-11. [扩展：审批 Approval](#11-扩展审批-approval)
-12. [扩展：事件 Events 与订单 Webhook](#12-扩展事件-events-与订单-webhook)
-13. [护栏与安全](#13-护栏与安全)
-- 附录 A [设备与供货方适配器契约](#附录-a-设备与供货方适配器契约)
-- 附录 B [能力 × 设备类型矩阵](#附录-b-能力--设备类型矩阵)
-- 附录 C [关键场景时序图](#附录-c-关键场景时序图)
-- 附录 D [变更记录](#附录-d-变更记录)
+三张表：**端点**去哪一节找、**概念**以哪一节为准、**哪份文档**给谁看。章节目录在左侧边栏。
+
+### 0.1 按端点
+
+全部 32 个操作。★ 是 §2.1 的最小接入集。
+
+| ★ | 端点 | 章节 | 是什么 |
+|---|---|---|---|
+| ★ | `GET /.well-known/ucp` | §4 | 发现档案：版本、能力、命名空间。公开，无需 token |
+| ★ | `GET /namespaces` | §5.4 | 运行时有哪些命名空间、谁是缺省 |
+| ★ | `POST /catalog/search` | §5.1 §5.2 | `supply` 命名空间 = 供货方在卖什么；`machine` = 某台机器里有什么 |
+|  | `POST /catalog/lookup` | §5.3 | 按 `sku_id` 批量取，≤ 50 个，可跨命名空间；变体带 `aliases[]`，这就是批量解析 |
+|  | `GET /skus/{sku_id}` | §5.4 | 一个 SKU 的身份、条码、别名、可采购来源 |
+|  | `PUT /skus/{sku_id}/aliases` | §5.4 | 人工确认两个号是同一件货 |
+| ★ | `POST /locations/search` | §6 | 有哪些机器；可按某商品此刻是否有货筛选 |
+|  | `PUT /locations/{id}` | §6 | 注册 / 更新一台机器及其周边档案 |
+|  | `DELETE /locations/{id}` | §6 | 移除一台机器（保留事件与对话） |
+| ★ | `POST /locations/sync` | §6 | 立即把库存与流水拉进线路状态 |
+|  | `GET /locations/{id}/inventory` | §5.2.1 | 实时直读货道，不经同步副本 |
+| ★ | `PUT /locations/{id}/prices` | §9 | **改真实售价**；`confirm: true`，超上限转审批 |
+|  | `POST /locations/{id}/restock` | §10.3 | 给机器平台的补货请求：`binding` 假 = 推荐，真 = 有约束力的订单 |
+| ★ | `POST /checkout-sessions` | §7.1 | 开一张采购会话（此时还没花钱） |
+|  | `GET /checkout-sessions/{id}` | §7.2 | 会话现状与待办 `messages[]` |
+|  | `PUT /checkout-sessions/{id}` | §7.1 | 改行项目或履约方式 |
+| ★ | `POST /checkout-sessions/{id}/complete` | §7.4 | **花真钱**：向供货方下单；`confirm: true` |
+|  | `POST /checkout-sessions/{id}/cancel` | §7.3 | 撤销会话，不会调用供货方 |
+| ★ | `GET /orders` | §8.2 | 机器交易流水（`kind=sale`）或采购单列表 |
+|  | `GET /orders/{id}` | §8.1 | 一张采购单的供货方状态与物流，或一笔机器交易 |
+| ★ | `GET /replenishment/plan` | §10.1 | 每个货道的日销、余量天数、建议动作 |
+|  | `GET /replenishment/runs` | §10.2 | 按状态列出补货行程 |
+|  | `POST /replenishment/runs` | §10.2 | 按当前计划生成一次行程（可能触发审批） |
+|  | `GET /replenishment/runs/{id}` | §10.2 | 一次行程 |
+|  | `POST /replenishment/runs/{id}/place` | §10.2 | 把行程交出去执行（按 `fulfiller` 路由） |
+|  | `POST /replenishment/runs/{id}/receive` | §10.2 | 确认到货，库存上调 |
+|  | `GET /replenishment/score` | §10 | 预测准确度回看 |
+| ★ | `GET /approvals` | §11 | 待审批 / 已处理的决策 |
+|  | `GET /approvals/{id}` | §11 | 一条决策 |
+| ★ | `POST /approvals/{id}` | §11 | 批准或驳回；批准改价即执行 |
+| ★ | `GET /events` | §12 | 事件流（最新在前），响应带 `websocket_url` |
+|  | `POST /events` | §12 | 其他 Agent 写入事件；不去重 |
+
+### 0.2 按概念（以这一节为准）
+
+跨章节反复出现的约定，只有一处是规范，别处都是引用。要改就改这一处。
+
+| 概念 | 规范出处 | 一句话 |
+|---|---|---|
+| 响应信封、`messages[]` | §3.1 | 业务结果用 HTTP 200 + `messages[]`，协议错误用状态码 |
+| 鉴权、请求头、幂等 | §3.2 §3.3 | 一个 operator token；`UCP-Agent`；`Idempotency-Key` |
+| 金额 | §3.4 | 整数分 + `CNY`，任何地方都不用元 |
+| 时间 | §3.5 | 对外 RFC 3339 带 `+08:00`；适配器内部 epoch ms |
+| `sku_id` 与命名空间 | §3.6 | `<vendor>-<role>:<vendor_sku>`，运行时发现 |
+| 分页 | §3.7 | `cursor` + `has_next_page` |
+| 错误码与 severity | §3.8 | 全量码表；程序只认 `code` |
+| 能力名的三种写法 | §5.4 | 档案级、命名空间级、登记时的简写 |
+| 售卖单位 EA / BX | §5.1 | `sale_units[]`；缺省按个下单 |
+| 别名与可采购来源 | §5.4 | 只有 `barcode` / `manual` 能下单 |
+| 订单六态与三个时间 | §8.2 | `taken_at` 测需求、`settled_at` 记营收、`updated_at` 轮询 |
+| 护栏与 `confirm: true` | §13 | 哪些动作要确认、受停机约束、要审批 |
+| 适配器契约 | 附录 A | 上游厂商要实现的方法与字段 |
+| 零代码 HTTP 接入 | A.6 | 八个端点、登记格式 |
+
+### 0.3 文档面
+
+| 面 | 给谁 | 内容 |
+|---|---|---|
+| 本文（指南） | 所有人 | **规范正文**：能力、实体、状态机、护栏、适配器契约 |
+| [`openapi.yaml`](openapi.yaml) · [API Reference](reference) | 写代码 / 生成客户端 | 每个操作的请求、响应、schema；核心与合作伙伴徽标 |
+| [Agent Skill `vendling-commerce-api`](skill/) | 调用本接口的 Agent | ID 规则、安全规则、配方、Python 客户端 |
+| [Agent Skill `vendling-vendor-adapter`](skills/vendling-vendor-adapter/) | 厂商 / 供应商的 Agent | 按 A.6 出接口：字段对照、自检脚本、参考实现 |
+| [agent-setup/prompt.md](agent-setup/prompt.md) | 任何 Agent | 一句话完成接入 |
+| [`llms.txt`](llms.txt) · [`llms-full.txt`](llms-full.txt) | 机器 | 索引与全文 |
 
 ---
 
@@ -96,8 +151,8 @@ UCP 只定义两个角色：**Platform**（消费能力的一方）和 **Busines
 Agent 直接用 [一键接入](#agent-setup) 那句话，五步会自动跑完。
 
 本规范一共 32 个操作，一条线路日常运转只依赖其中 13 个。它们要么是 Vendling 自己的定时循环每天在调的能力，
-要么是仅有的两个会动真钱、改真价的动作。先接这些；其余的（Lookup、别名注册表、结账会话的查改撤、采购单状态、
-行程的下单与收货、预测评分、补货推荐……）都是便利接口，按需再接。API Reference 里这 13 个操作带 **核心** 徽标。
+要么是仅有的两个会动真钱、改真价的动作。先接这些；其余的（批量 Lookup、别名注册表、结账会话的查改撤、采购单状态、
+行程的列取下单收货、预测评分、补货请求、实时读货道……）按需再接。API Reference 里这 13 个操作带 **核心** 徽标。
 关键场景的时序图见附录 C。
 
 | ★ | 操作 | 能力 | 为什么必需 | Vendling 自己怎么用 |
@@ -357,7 +412,8 @@ namespace = "<vendor>-<role>"      role ∈ supply | machine
 | Search Catalog | `POST` | `/catalog/search` | `filters.namespace` 选数据源；缺省是默认供货方 |
 | Batch Lookup | `POST` | `/catalog/lookup` | 按 `sku_id` 批量取，最多 50 个，可跨命名空间 |
 | 命名空间注册表（扩展） | `GET` | `/namespaces` | 运行时存在的命名空间与缺省值 |
-| SKU 注册表（扩展） | `GET` / `PUT` | `/skus/{sku_id}`、`/skus/{sku_id}/aliases` | 见 §5.4 |
+| 取一个 SKU（扩展） | `GET` | `/skus/{sku_id}` | 见 §5.4 |
+| 记别名（扩展） | `PUT` | `/skus/{sku_id}/aliases` | 见 §5.4 |
 
 同一套端点，`filters.namespace` 的**角色**决定查哪种源：
 
@@ -540,6 +596,17 @@ GET /namespaces
 
 批量解析不需要单独接口：`POST /catalog/lookup` 一次最多 50 个 ID，每个变体都带 `aliases[]`。
 
+**能力名有三种写法**，指的是三件事，不要混：
+
+| 写法 | 出现在 | 含义 |
+|---|---|---|
+| `com.xiaopingfeng.vendling.pricing` | `/.well-known/ucp` 的 `capabilities` | 本部署整体支持这个扩展 |
+| `com.xiaopingfeng.vendling.replenishment.order` | `GET /namespaces` 里每个命名空间的 `capabilities[]` | **这一个**上游支持到哪一步 |
+| `replenishment.order` | A.6 登记 JSON 的 `capabilities` | 登记时的简写，前缀自动补全 |
+
+前两者的区别是「本系统会不会」与「这台机器的平台会不会」：档案里有 `pricing` 不代表每个 `machine` 命名空间都能改价。
+调用前看命名空间自己的 `capabilities[]`，不支持的返回 `namespace_unsupported`。
+
 别名规则：`source` ∈ `barcode`（两边都有 EAN 时自动建立）、`manual`（运营者确认）、`suggested`（按名称相似度提出）。
 **只有 `barcode` 和 `manual` 参与下单**。别名是对称的。没有可采购来源不是错误，但带着这样的行去 §10.2 下单会得到 `unresolved_sku`。
 
@@ -673,7 +740,7 @@ Idempotency-Key: po_20260909_001
 | `canceled` | 作废 | 主动取消、审批驳回、`expires_at` 过期（24 小时） | 终态 |
 
 **紧急停机**（`rules.killSwitchEngaged`）不是一个状态：任何时候 `complete` 都会被拒（`409 kill_switch_engaged`），会话本身不动。
-读不到规则时 `503 guard_unverifiable`，**拒绝而非放行**。
+读不到规则时 `503 guard_unverifiable`（护栏失败关闭，§13）。
 
 ### 7.4 提交
 
@@ -710,7 +777,8 @@ POST /checkout-sessions/po_20260909_001/complete
 |---|---|---|
 | Get Order | `GET` | `/orders/{id}` |
 | List Orders（扩展） | `GET` | `/orders?kind=sale&location=&from=&to=&trade_status=&cursor=&limit=` |
-| Order Event Webhook | `POST` | 平台提供的 URL — **[缺]**，见 §12 |
+
+反向的订单 Webhook（本系统推给平台）不属于本节的操作，见 §12。
 
 ### 8.1 采购单（`kind: purchase`）
 <!-- profiles: supply,vendor-supply -->
@@ -869,7 +937,8 @@ PUT /locations/12345678/prices
 | 操作 | 方法 | 端点 |
 |---|---|---|
 | 当前计划 | `GET` | `/replenishment/plan` |
-| 列出 / 取一个行程 | `GET` | `/replenishment/runs?status=`、`/replenishment/runs/{id}` |
+| 列出行程 | `GET` | `/replenishment/runs?status=` |
+| 取一个行程 | `GET` | `/replenishment/runs/{id}` |
 | 生成行程 | `POST` | `/replenishment/runs` |
 | 下单 | `POST` | `/replenishment/runs/{id}/place` |
 | 收货 | `POST` | `/replenishment/runs/{id}/receive` `{delivered:[{slot_id, quantity}], note?}` |
@@ -1051,12 +1120,11 @@ LedgerLine   { vendorSku, priceFen, costFen: number|null, status: "paid"|"unpaid
 - `status` / `statusLabel` 是上游原始状态；`state` 是归一后的六态之一（§8.2：`in_progress | pending_review | settled | payment_failed | refunded | cancelled`）。
   不给 `state` 时由行状态推导：全部 `paid` 视为 `settled`。
 - `slotId` 是机器内的位编号（弹簧机的货道号、智能柜的层或层加位）；不给时系统用"机器-商品"代替，一层多品的柜子必须给。
-- `createdAt` 保留为上游的创建时间；`takenAt` 是取货时间（弹簧机 = 出货，智能柜 = 关门），需求测算用它；`settledAt` 是扣款成功时间；
-  `updatedAt` 是最近一次变化的时间；`finalized` 表示订单不会再变。即付即结的机器三者同值、`finalized = true`。
+- 四个时间与 `finalized` 的含义见 §8.2（同一套语义）；即付即结的机器 `createdAt = takenAt = settledAt`、`finalized = true`。
 - `by: "updated"` 时按 `updatedAt` 取窗口，这是拿到晚结算、复核改写、结算后退款订单的唯一可靠方式；平台不支持时返回 `{ ok: false, reason: "unsupported" }`，调用方退回全量拉取。
 - `costFen` 只在上游给出一个**不等于售价**的成本时才有值；等于售价的"成本"没有信息量，必须置 `null`。
 - 流水是账户级的：适配器不做位置过滤，调用方按 `locationId` 分拣。
-- **[缺]** `state`、`takenAt` / `settledAt` / `updatedAt` / `finalized`、`by`、`slotId`：规范自 2026-09-10 起定义，参考实现的机器平台尚未提供；`restock` / `restockStatus` 契约与 HTTP 适配器已实现，参考实现的机器平台只接受 `binding: false`。
+- **[缺]** 同 §8.2 的那一条（`state`、四个时间、`by`），外加 `slotId`；`restock` / `restockStatus` 契约与 HTTP 适配器已实现，参考实现的机器平台只接受 `binding: false`。
 
 ### A.4 注册与发现
 
@@ -1318,6 +1386,7 @@ sequenceDiagram
 
 | 日期 | 变化 |
 |---|---|
+| 2026-09-11 | 加 §0 索引（端点 → 章节、概念 → 唯一出处、文档面 → 受众）；统一能力名的三种写法（§5.4）；消除指南内部与 skill 之间的重复陈述；`scripts/check_docs.py` 把九项一致性检查纳入 CI。 |
 | 2026-09-10 v2 | 精简：删除 `POST /catalog/product`、`POST /locations/lookup`、`POST /skus/resolve`（`POST /catalog/lookup` 与 `GET /skus/{id}` 已覆盖）；`/locations/{id}/restock-recommendations` 改为 `/locations/{id}/restock` 加 `binding`；A.3 的三个补货方法并成 `restock` + `restockStatus`；新增 A.6 零代码 HTTP 适配器；发现档案不再声明 `location.lookup`；§2.1 加五步接入、§2.3 加接入流程。 |
 | 2026-09-10 | 六态订单模型、补货订单、附录 C 时序图、合作伙伴视角、核心接口标记。 |
 | 2026-09-09 | 首版：UCP 对齐的目录 / 结账 / 订单 / 位置 / 定价 / 补货 / 审批 / 事件，厂商无关的适配器契约。 |

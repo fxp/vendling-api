@@ -12,9 +12,8 @@ namespaces are never equal, even for the same physical good.
 | `supply` | a supplier's catalog | supplier catalog, purchase orders (checkout), purchase order status |
 | `machine` | the platform that runs the machines | machine inventory, sales lines, price changes, restock plan/runs/recommendations |
 
-Which vendors exist is a runtime fact: `GET /namespaces` (or the discovery document). Each entry
-has `status: live | planned`; a `planned` namespace answers `namespace_unsupported`. The docs use
-the placeholder vendor `acme` (`acme-supply`, `acme-machine`).
+Each `GET /namespaces` entry has `status: live | planned`; a `planned` namespace answers
+`namespace_unsupported`.
 
 Rules:
 1. An endpoint only accepts the role it serves (`namespace_mismatch` otherwise).
@@ -54,8 +53,3 @@ The same physical good in other namespaces:
   (name similarity, unconfirmed). Only `barcode` and `manual` may be used to place an order;
   `resolve` never returns `suggested`.
 - Aliases are symmetric. Record them with `PUT /skus/{id}/aliases` only after the user confirmed the match.
-
-## Money and time
-
-- Integer fen + `"currency": "CNY"` everywhere. Never assume yuan.
-- RFC 3339 with `+08:00`. Any vendor-side format is the adapter's problem, not yours.
