@@ -14,8 +14,13 @@
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },
-  "routes": [
-    { "pattern": "vendling.dev", "custom_domain": true },
-    { "pattern": "www.vendling.dev", "custom_domain": true }
-  ]
+  // ── TAKEN OFFLINE 2026-09-11 ────────────────────────────────────────
+  // Routes removed at the owner's request. This Worker is stateless — it
+  // serves a build of spec/ + openapi/ — so nothing is lost by detaching
+  // the domain, and `wrangler deploy` with the lines below restored puts
+  // it straight back.
+  //   { "pattern": "vendling.dev", "custom_domain": true },
+  //   { "pattern": "www.vendling.dev", "custom_domain": true }
+  "routes": [],
+  "workers_dev": false
 }
