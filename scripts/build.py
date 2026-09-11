@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 MD = ROOT / "spec" / "commerce-api.md"
 OPENAPI = ROOT / "openapi" / "vendling-commerce.openapi.yaml"
 SKILL = ROOT / "skill" / "vendling-commerce-api"
+# Further skills published under /api/skills/<name>/ (the first one keeps its historic /api/skill/ URL).
+EXTRA_SKILLS = [ROOT / "skill" / "vendling-vendor-adapter"]
 AGENT_SETUP = ROOT / "agent-setup" / "prompt.md"
 
 SCALAR_VERSION = "1.68.0"  # pinned; bump deliberately
@@ -357,8 +359,9 @@ def build_reference(site: Site) -> str:
     return page
 
 
-def build_skill_index(site: Site, files: list[Path], skill_out: Path) -> str:
-    skill_md = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+def build_skill_index(site: Site, files: list[Path], skill_out: Path, skill_dir: Path = SKILL, rel: str = "skill/") -> str:
+    name = skill_dir.name
+    skill_md = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
     fm = re.match(r"^---\n(.*?)\n---\n", skill_md, re.S)
     body_md = skill_md[fm.end():] if fm else skill_md
     desc = ""
@@ -368,20 +371,30 @@ def build_skill_index(site: Site, files: list[Path], skill_out: Path) -> str:
             desc = " ".join(line.strip() for line in m.group(1).splitlines())
     body, toc = render_md(body_md)
     listing = "".join(f'<li><a href="{f.relative_to(skill_out).as_posix()}">{f.relative_to(skill_out).as_posix()}</a></li>' for f in files)
-    guide_href = "/api/" if site.portal else site.api_href("", "skill/")
-    ref_href = "/api/reference" if site.portal else site.api_href("reference", "skill/")
-    page = head(site, "Vendling Commerce API · Agent Skill", desc[:300], "skill", API_BASE + "skill/", from_dir="skill/")
+    guide_href = "/api/" if site.portal else site.api_href("", rel)
+    ref_href = "/api/reference" if site.portal else site.api_href("reference", rel)
+    other = (
+        f'<a href="{"/api/skills/vendling-vendor-adapter/" if site.portal else site.api_href("skills/vendling-vendor-adapter/", rel)}">厂商 / 供应商接入 skill →</a>'
+        if name == "vendling-commerce-api"
+        else f'<a href="{"/api/skill/" if site.portal else site.api_href("skill/", rel)}">← 运营者 / Agent 接入 skill</a>'
+    )
+    blurb = (
+        "给调用 Vendling 接口的 Agent 用：ID 规则、安全规则、配方、Python 客户端。更省事的办法：把 <a href=\"{g}#agent-setup\">一键接入</a> 那句话发给 Agent。".format(g=guide_href)
+        if name == "vendling-commerce-api"
+        else "给售货机厂商、智能柜 / 冰柜平台、供应商的 Agent 用：把自己的接口对照附录 A.6 的契约做成八个 HTTPS 端点，用自带的检查脚本自检，产出运营者登记用的 JSON。零代码接入，不用改 Vendling。"
+    )
+    trigger = "Vendling / 售货机库存 / 补货 / vendling.xiaopingfeng.com" if name == "vendling-commerce-api" else "接入 Vendling / 做适配器 / 字段对照 / VENDLING_HTTP_VENDORS"
+    page = head(site, f"Vendling · Agent Skill · {name}", desc[:300], "skill", API_BASE + rel, from_dir=rel)
     page += f"""<div class="wrap">
 <aside><div class="meta">Skill</div>{toc}</aside>
 <main><article>
-<div class="meta">Claude Code / Agent Skill · vendling-commerce-api</div>
-<h1>Agent Skill：vendling-commerce-api</h1>
-<p>给其他 Agent 用的接入 skill。把整个目录放到 <code>~/.claude/skills/vendling-commerce-api/</code>（或你的 agent 框架的 skills 目录）即可；
-触发描述见 <code>SKILL.md</code> 的 frontmatter。更省事的办法：把 <a href="{guide_href}#agent-setup">一键接入</a> 那句话发给 Agent。源码在 <a href="{DOCS_REPO}/tree/main/skill/vendling-commerce-api">vendling-api</a>。</p>
-<div class="dl"><a href="vendling-commerce-api.skill.zip" download>⬇ 下载 zip</a><a href="SKILL.md">SKILL.md</a><a href="{guide_href}">← 指南</a><a href="{ref_href}">API Reference</a></div>
+<div class="meta">Claude Code / Agent Skill · {name}</div>
+<h1>Agent Skill：{name}</h1>
+<p>{blurb} 把整个目录放到 <code>~/.claude/skills/{name}/</code>（或你的 agent 框架的 skills 目录）即可；触发描述见 <code>SKILL.md</code> 的 frontmatter。源码在 <a href="{DOCS_REPO}/tree/main/skill/{name}">vendling-api</a>。</p>
+<div class="dl"><a href="{name}.skill.zip" download>⬇ 下载 zip</a><a href="SKILL.md">SKILL.md</a>{other}<a href="{guide_href}">← 指南</a><a href="{ref_href}">API Reference</a></div>
 <p class="meta" style="margin-top:22px">文件</p>
 <ul>{listing}</ul>
-<blockquote><p>安装：<code>unzip vendling-commerce-api.skill.zip -d ~/.claude/skills/</code>，然后在会话里提到 Vendling / 售货机库存 / 补货 / vendling.xiaopingfeng.com 即可触发。</p></blockquote>
+<blockquote><p>安装：<code>unzip {name}.skill.zip -d ~/.claude/skills/</code>，然后在会话里提到 {trigger} 即可触发。</p></blockquote>
 <hr>
 <p class="meta">SKILL.md（原文）</p>
 {body}
@@ -424,6 +437,13 @@ supplier credentials): `https://vendling-core-staging.fxp007.workers.dev`.
 - [vendling_client.py]({API_BASE}skill/scripts/vendling_client.py): stdlib Python client + CLI
 - [zip]({API_BASE}skill/vendling-commerce-api.skill.zip)
 
+## Vendor onboarding skill (machine platforms, suppliers)
+
+- [vendling-vendor-adapter]({API_BASE}skills/vendling-vendor-adapter/): serve the adapter contract over HTTPS (appendix A.6), no code in Vendling
+- [SKILL.md]({API_BASE}skills/vendling-vendor-adapter/SKILL.md) · [http-contract.md]({API_BASE}skills/vendling-vendor-adapter/references/http-contract.md) · [mapping-worksheet.md]({API_BASE}skills/vendling-vendor-adapter/references/mapping-worksheet.md)
+- [vendling_vendor_check.py]({API_BASE}skills/vendling-vendor-adapter/scripts/vendling_vendor_check.py): read-only conformance checker that prints the registration entry · [mock_vendor.py]({API_BASE}skills/vendling-vendor-adapter/scripts/mock_vendor.py): reference server
+- [zip]({API_BASE}skills/vendling-vendor-adapter/vendling-vendor-adapter.skill.zip)
+
 ## Related
 
 - [Portal index]({CANONICAL}llms.txt)
@@ -454,6 +474,16 @@ def build_api(site: Site) -> None:
         for f in files:
             z.write(f, arcname=f"vendling-commerce-api/{f.relative_to(skill_out).as_posix()}")
     (skill_out / "index.html").write_text(build_skill_index(site, files, skill_out), encoding="utf-8")
+
+    for extra in EXTRA_SKILLS:
+        rel = f"skills/{extra.name}/"
+        extra_out = out / "skills" / extra.name
+        shutil.copytree(extra, extra_out, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        efiles = sorted(p for p in extra_out.rglob("*") if p.is_file())
+        with zipfile.ZipFile(extra_out / f"{extra.name}.skill.zip", "w", zipfile.ZIP_DEFLATED) as z:
+            for f in efiles:
+                z.write(f, arcname=f"{extra.name}/{f.relative_to(extra_out).as_posix()}")
+        (extra_out / "index.html").write_text(build_skill_index(site, efiles, extra_out, extra, rel), encoding="utf-8")
 
 
 # ── /docs/ (optional, from a local vendling-core checkout) and home ───────
@@ -567,6 +597,7 @@ def build_home(site: Site, entries: list[tuple[str, str, str]]) -> str:
 <a class="card" href="/api/reference"><b>API Reference</b>OpenAPI 3.1，Scalar 渲染，每个端点的请求 / 响应 / schema<small><br>openapi.yaml</small></a>
 <a class="card" href="/api/skill/"><b>Agent Skill</b>给 Claude Code 等 Agent 的接入 skill：ID 规则、安全规则、配方、Python 客户端<small><br>vendling-commerce-api</small></a>
 <a class="card" href="/api/#agent-setup"><b>Agent 一键接入</b>一句话让 Agent 自己装好 skill、配好 token、验证连接<small><br>agent-setup/prompt.md</small></a>
+<a class="card" href="/api/skills/vendling-vendor-adapter/"><b>厂商 / 供应商接入 Skill</b>售货机平台或供货方零代码接入：八个 HTTPS 端点、自检脚本、登记 JSON<small><br>vendling-vendor-adapter</small></a>
 {docs_card}
 <a class="card" href="{DOCS_REPO}" rel="noopener"><b>文档源码 ↗</b>这个站的全部内容：规范、OpenAPI、skill、构建与部署<small><br>github.com/fxp/vendling-api</small></a>
 </div>
@@ -615,7 +646,7 @@ def build_portal(site: Site, core: Path | None) -> None:
     (out / "index.html").write_text(build_home(site, entries), encoding="utf-8")
     (out / "llms.txt").write_text(build_portal_llms(entries), encoding="utf-8")
     (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\n\nSitemap: {CANONICAL}sitemap.txt\n", encoding="utf-8")
-    urls = [CANONICAL, API_BASE, API_BASE + "reference", API_BASE + "skill/"] + ([CANONICAL + "docs/"] if entries else []) + [f"{CANONICAL}docs/{s}/" for s, _, _ in entries]
+    urls = [CANONICAL, API_BASE, API_BASE + "reference", API_BASE + "skill/", API_BASE + "skills/vendling-vendor-adapter/"] + ([CANONICAL + "docs/"] if entries else []) + [f"{CANONICAL}docs/{s}/" for s, _, _ in entries]
     (out / "sitemap.txt").write_text("\n".join(urls) + "\n", encoding="utf-8")
     (out / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#b8452b"/><text x="32" y="43" font-family="Menlo,monospace" font-size="34" font-weight="700" text-anchor="middle" fill="#fbfaf7">V</text></svg>', encoding="utf-8")
     (out / "404.html").write_text(head(site, "找不到 · Vendling Developers", "404", "", CANONICAL, section="404") + '<div class="wrap single"><main><article><h1>404</h1><p>这里没有东西。回 <a href="/">首页</a> 或 <a href="/api/">API 指南</a>。</p></article></main></div></body></html>', encoding="utf-8")

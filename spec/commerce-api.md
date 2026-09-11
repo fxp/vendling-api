@@ -157,7 +157,7 @@ Agent 直接用 [一键接入](#agent-setup) 那句话，五步会自动跑完�
 
 | | 运营者 / Agent | 售货机厂商 / 机器平台 | 商品供应商 / 批发平台 |
 |---|---|---|---|
-| 1 | 向运营者要一个 token | 按 A.6 暴露 `inventory`、`ledger` 两个 GET（可选：`prices`、`restock`） | 按 A.6 暴露 `catalog`、`orders`、`orders/{ref}` |
+| 1 | 向运营者要一个 token | 按 A.6 暴露 `inventory`、`ledger` 两个 GET（可选：`prices`、`restock`）；让你的 Agent 用 [vendling-vendor-adapter](skills/vendling-vendor-adapter/) skill 做字段对照和自检 | 按 A.6 暴露 `catalog`、`orders`、`orders/{ref}`；同样可用该 skill |
 | 2 | `GET /.well-known/ucp`（或把 [一键接入](#agent-setup) 发给 Agent） | 把 base URL 和 token 交给运营者 | 把 base URL 和 token 交给运营者 |
 | 3 | §2.1 的五步 | 运营者登记 `<vendor>-machine`，`GET /namespaces` 立即可见 | 运营者登记 `<vendor>-supply` |
 | 4 | 需要花钱 / 改价时读 §13，带 `confirm: true` | `PUT /locations/{id}` 注册机器，`POST /locations/sync` 跑通即接入完成 | `POST /catalog/search` 看到自己的商品即接入完成 |
@@ -1093,6 +1093,7 @@ LedgerLine   { vendorSku, priceFen, costFen: number|null, status: "paid"|"unpaid
 - 登记格式：`[{ "namespace": "acme-machine", "baseUrl": "https://api.acme.example/vendling", "token": "…", "capabilities": ["pricing", "replenishment.order"] }]`；
   `capabilities` 只列可选扩展（`pricing`、`replenishment.recommend`、`replenishment.order`），角色的基础能力自动带上；内置命名空间不能被覆盖。
 - 超时 15 秒；金额整数分、时间 epoch ms，与 A.1 一致。
+- 配套 skill：[vendling-vendor-adapter](skills/vendling-vendor-adapter/) —— 字段对照表、只读一致性检查脚本（跑完直接打印登记 JSON）、全部八个端点的参考实现。
 
 ---
 

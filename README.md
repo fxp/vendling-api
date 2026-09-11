@@ -10,6 +10,7 @@ Published at **https://vendling.dev**.
 | OpenAPI 3.1 | [`openapi/vendling-commerce.openapi.yaml`](openapi/vendling-commerce.openapi.yaml) → https://vendling.dev/api/reference |
 | Agent skill (Claude Code / any agent): identity rules, safety rules, recipes, stdlib Python client | [`skill/vendling-commerce-api/`](skill/vendling-commerce-api/) → https://vendling.dev/api/skill/ |
 | One-line agent setup, Cloudflare-style | [`agent-setup/prompt.md`](agent-setup/prompt.md) → https://vendling.dev/api/agent-setup/prompt.md |
+| Vendor onboarding skill (machine platforms, suppliers): serve the adapter contract over HTTPS, conformance checker, reference server | [`skill/vendling-vendor-adapter/`](skill/vendling-vendor-adapter/) → https://vendling.dev/api/skills/vendling-vendor-adapter/ |
 | Agent-readable index | https://vendling.dev/llms.txt · https://vendling.dev/api/llms.txt |
 
 The API itself is served by the (private) `vendling-core` repo at `https://vendling.xiaopingfeng.com`
