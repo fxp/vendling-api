@@ -203,8 +203,19 @@ def check_ledger(rep: Report, base, token, from_ms, to_ms):
             if pk in r:
                 rep.fail(w + f".{pk}", "customer identity must not be sent")
         lines = r.get("lines")
-        if not isinstance(lines, list) or not lines:
-            rep.fail(w + ".lines", "must be a non-empty array")
+        if not isinstance(lines, list):
+            rep.fail(w + ".lines", "must be an array")
+            continue
+        if not lines:
+            # A real account returns line-less orders: a session that opened
+            # and has not resolved, or one that closed with nothing taken.
+            # They are not sales and they are not malformed — but they are
+            # dangerous, because a caller is invited to derive state from the
+            # lines ("all paid -> settled") and [].every() is vacuously true.
+            # So the only hard requirement is that such a record SAYS what it
+            # is; a settled order with nothing in it really is malformed.
+            if r.get("state") == "settled" or not r.get("state"):
+                rep.fail(w + ".lines", "empty: a record with no lines must carry a non-settled `state` (in_progress / cancelled / …), or a caller deriving state from the lines books it as a settled sale")
             continue
         for j, l in enumerate(lines):
             lw = f"{w}.lines[{j}]"
@@ -309,6 +320,9 @@ def main(argv=None) -> int:
     ap.add_argument("--ref", help="an existing restock ref (machine) or order ref (supply) to check the status endpoint")
     ap.add_argument("--check-auth", action="store_true", help="also verify that a wrong token is refused with 401/403")
     ap.add_argument("--supports", default="", help="optional capabilities you serve, comma-separated: pricing, replenishment.recommend, replenishment.order")
+    ap.add_argument("--shares-sku-space-with", default="", metavar="NAMESPACE",
+                    help="the SAME vendor's other-role namespace, when both roles use one product id space "
+                         "(a platform that runs the machines and also sells the goods). Goes into the registration JSON.")
     ap.add_argument("--json", action="store_true", help="print the report as JSON")
     a = ap.parse_args(argv)
 
@@ -347,6 +361,8 @@ def main(argv=None) -> int:
         rep.warn("--supports", "supply namespaces have no optional capabilities; ignored")
         caps = []
     entry = {"namespace": a.namespace, "baseUrl": a.base.rstrip("/"), "token": a.token or "<token>", **({"capabilities": caps} if caps else {})}
+    if a.shares_sku_space_with:
+        entry["sharesSkuSpaceWith"] = a.shares_sku_space_with
 
     if a.json:
         print(json.dumps({"rows": [{"level": l, "where": w, "message": m} for l, w, m in rep.rows], "failed": rep.failed(), "registration": entry}, ensure_ascii=False, indent=2))
@@ -355,6 +371,10 @@ def main(argv=None) -> int:
         print("\nRegistration entry for VENDLING_HTTP_VENDORS (send the token out of band):")
         print(json.dumps([entry], ensure_ascii=False, indent=2))
         print("\nNot checked (they have side effects): POST /prices, POST /restock, POST /orders. Test those against a staging base URL only.")
+        if not a.shares_sku_space_with:
+            print("If this vendor runs the machines AND sells the goods with ONE product id space for both,\n"
+                  "re-run with --shares-sku-space-with <the other namespace>. Without it the operator has to\n"
+                  "confirm every product by hand, and a supplier that publishes no barcodes cannot be bridged at all.")
     return 1 if rep.failed() else 0
 
 

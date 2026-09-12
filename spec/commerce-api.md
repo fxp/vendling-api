@@ -607,8 +607,28 @@ GET /namespaces
 前两者的区别是「本系统会不会」与「这台机器的平台会不会」：档案里有 `pricing` 不代表每个 `machine` 命名空间都能改价。
 调用前看命名空间自己的 `capabilities[]`，不支持的返回 `namespace_unsupported`。
 
-别名规则：`source` ∈ `barcode`（两边都有 EAN 时自动建立）、`manual`（运营者确认）、`suggested`（按名称相似度提出）。
-**只有 `barcode` 和 `manual` 参与下单**。别名是对称的。没有可采购来源不是错误，但带着这样的行去 §10.2 下单会得到 `unresolved_sku`。
+别名规则：`source` ∈ `barcode`（两边都有 EAN 时自动建立）、`manual`（运营者确认）、
+`vendor`（厂商声明两个角色共用一套商品编号，见下）、`suggested`（按名称相似度提出）。
+**`barcode`、`manual`、`vendor` 参与下单；`suggested` 不参与**——它是一个等人确认的猜测。
+别名是对称的。没有可采购来源不是错误，但带着这样的行去 §10.2 下单会得到 `unresolved_sku`。
+
+**共用编号空间（`vendor` 别名的来源）。** 通常机器 sku 和供货 sku 是两套编号，
+同一件商品在两边是不同的 id，只有条码或人工能搭桥。但**既运营机器又卖货的平台**
+可能两个角色用的是同一套商品编号——那么 `<vendor>-machine:N` 与 `<vendor>-supply:N`
+按构造就是同一件商品，没有什么需要确认的。
+
+厂商在登记时声明一次（附录 A.6 的 `sharesSkuSpaceWith`），系统据此在**每次读取时**
+隐式给出这条别名，`source: "vendor"`、`confirmed_at: null`。不落库：落库的行会在
+厂商改目录之后继续断言一个已经不成立的对应，也会在声明被撤回后继续生效。
+存量的人工别名优先——针对这一件商品的明确判断，胜过关于编号的一般性声明。
+
+这必须**声明**而不能推断。两个命名空间都从 1 开始编号不构成任何证据，而声明只在
+同一厂商的另一个角色之间成立：跨厂商的"共用编号"不可能为真，接受这种声明等于把
+一次笔误变成"因为那家的机器里有 46 号，就去这家买 46 号"。
+
+**声明的是"同一套编号"，不是"有货"。** `purchasable_from[]` 只列供货方目录里当下
+真的有、能报价的；映射存在但目录里没有的，留在 `aliases[]` 里并附一条 `unresolved_sku`
+警告。够不到供货方目录时是第三种答案——条目保留并说明原因，因为"不知道"不等于"没有"。
 
 ---
 
@@ -891,8 +911,15 @@ GET /orders?kind=sale&location=12345678&from=2026-09-09T00:00:00%2B08:00&to=2026
 - 流水是**账户级**的：`location` 参数是服务端在全量结果上做的筛选，多机器线路上要跨机器完整翻页（上限 20 页，超过带 `history_truncated` 警告）。
 - `trade_status_raw` / `trade_status_label` 是机器平台的原始状态，扩展字段，供排障用。
 - 授权方式、会员标识等**顾客身份信息不进入本规范**：适配器不得透传。
-- **[缺]** `trade_status` 归一化枚举、`finalized`、`taken_at`、`settled_at`、`updated_at`、`updated_from` / `updated_to`：规范自 2026-09-10 起要求；
-  参考实现当前把原始状态放在 `trade_status`、只区分已结算 / 全部，因为它接的第一台机器是即付即结的弹簧机。
+- `trade_status` 归一化枚举、`finalized`、`taken_at`、`settled_at`、`updated_at`：参考实现自 2026-09-11 起**已实现**。
+  归一化状态由适配器给出；适配器没给时，参考实现**只在订单有行的情况下**从行状态推导（全部 `paid` → `settled`）——
+  空数组的"全部 paid"恒为真，拿它推导会把一次"开了门没拿东西"的会话记成一笔已结算的 ¥0 销售。
+  既没有适配器状态又没有行时，`trade_status` 整个缺省，只留 `trade_status_raw`：一个缺失的状态比一个自信的错词有用。
+  `trade_status` 现在接受六个状态值中的任意一个做过滤，传不认识的值返回 `400 invalid`——
+  `orders: []` 和"今天没卖出去东西"长得一模一样，一次过滤器笔误不该读成"没有销售"。
+- **[缺]** `updated_from` / `updated_to`：上游需要按更新时间过滤流水的能力（A.6 的 `by=updated`）。
+  机器平台不提供时按契约明确回 `unsupported`，而不是悄悄返回取货时间窗——
+  所以在这类平台上，晚结算、复核改写、结算后退款**轮询不到**，这是平台的真实限制。
 
 ---
 
@@ -972,10 +999,24 @@ PUT /locations/12345678/prices
 |---|---|
 | `blocked` | 紧急停机时生成，`line_items` 为空。**和"没什么要补"不是一回事** |
 | `nothing_to_do` | 没有货道需要补 |
+| `superseded` | 后来的计划取代了它（`superseded_by` 是新行程的 id）。**排在审批状态之前**：它不在等任何人 |
 | `pending_approval` / `rejected` / `approved` | 预估成本 > `spendingLimitPerRun` 时走审批 |
 | `placed` / `delivered` | 已下单（`placed_at`）/ 已收货（`delivered_at`） |
 
 - 行项目是机内 SKU（`machine` 角色）；每行带 `source`（经 §5.4 解析到的可采购 `sku_id` + 计量单位，缺省按个）。
+- **同一条线路同时只应有一张活着的行程。** 没下单的旧行程，其数量是按更早的库存算出来的；
+  两张都活着意味着要么买两次，要么批错那一张。新计划生成时，任何**尚未下单**的旧行程被标记
+  `superseded`（已下单、已收货的是历史，不动）。被取代的行程仍然保留——它挂着的审批决定还指向它，
+  "当时考虑过什么"也该留下。但审批卡已经躺在某人的聊天工具里，所以**拒绝发生在花钱那一刻**：
+  对 `superseded` 的行程调 `place` 返回 `409 already_placed`，并指出该去下哪一张。
+- 行上的 `transfer: { quantity, from[] }` 是**从线路上另一台机器调过来、不必采购**的数量。
+  `quantity` 已经扣掉了它，所以一行完全可以是 `quantity: 0` 且带 `transfer`——那是行程上的一个停靠点，
+  不是一笔订单。计划算出别处压着同一件商品的滞销库存时给出这个建议；行程若忽略它照买，
+  就是为同一个分销问题付两次钱，滞销货还留在原地。
+- 读取行程（列表或详情）时，**买不到的行会以 `unresolved_sku` 警告逐条点名**：
+  没有可采购别名的，以及 `source` 指向的商品当下不在供货方目录里的。
+  行程是给人批的，批一张有三行供货方根本给不出的单，正是这整套确认与限额机制要防的事。
+  列表只对**还能动**的行程报（`superseded`、已下单、已收货、已拒绝的不报），否则真警告会被淹成噪音。
 - **下单** `place`：紧急停机 `409`；已下单 `409 already_placed`；待审批 `409 approval_required`。行程按 `fulfiller` 路由（时序见附录 C.5）：
   `supply` —— 按 `source` 创建 §7 的结账会话（跨供货方时拆成多张），未解析的行是错误；
   `machine_platform` —— 机器平台登记了 `replenishment.order` 能力时，整张行程作为**补货订单**交给它执行（A.3 `restock(…, {binding: true})`），`external_ref` 记平台单号，回执自动填 `receive`；
@@ -1160,6 +1201,15 @@ LedgerLine   { vendorSku, priceFen, costFen: number|null, status: "paid"|"unpaid
 - 最小实现：machine 只做库存和流水两个 GET；supply 做目录、下单、单状态三个。
 - 登记格式：`[{ "namespace": "acme-machine", "baseUrl": "https://api.acme.example/vendling", "token": "…", "capabilities": ["pricing", "replenishment.order"] }]`；
   `capabilities` 只列可选扩展（`pricing`、`replenishment.recommend`、`replenishment.order`），角色的基础能力自动带上；内置命名空间不能被覆盖。
+- `"status": "planned"` 占住一个命名空间但不提供适配器：`GET /namespaces` 里看得到，调用它得到
+  `namespace_unsupported`（"登记了，还没上线"）而不是 `invalid`（"没听说过"）。这种条目不需要 `baseUrl`。
+- `"sharesSkuSpaceWith": "acme-machine"` 声明**同一厂商的两个角色共用一套商品编号**（§5.4）：
+  写在任一侧即可，关系是对称的。只在同一厂商的另一个角色之间成立，跨厂商或指向同一角色的声明会被忽略并打日志。
+  既运营机器又卖货的平台常常如此，而这类平台的批发接口往往不给条码——不声明的话，机器里的商品
+  在采购侧一个也对应不上，补货计划算得出来却一件都买不到。
+- 运营者侧另有 `VENDLING_DEFAULT_MACHINE_NS` / `VENDLING_DEFAULT_SUPPLY_NS` 指定线路自身状态与采购
+  默认走哪个命名空间。不设就取该角色第一个 live 的——**同角色接入第二家时务必显式设定**，
+  否则调换登记数组的顺序就会静默换掉整条线路历史数据的来源。
 - 超时 15 秒；金额整数分、时间 epoch ms，与 A.1 一致。
 - 配套 skill：[vendling-vendor-adapter](skills/vendling-vendor-adapter/) —— 字段对照表、只读一致性检查脚本（跑完直接打印登记 JSON）、全部八个端点的参考实现。
 

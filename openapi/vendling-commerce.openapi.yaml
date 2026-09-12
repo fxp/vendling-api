@@ -666,7 +666,7 @@ paths:
         - { name: location, in: query, schema: { type: string }, description: Machine id (client-side filter; the upstream ledger is account-wide) }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
-        - { name: trade_status, in: query, schema: { type: string, enum: [settled, all, in_progress, pending_review, payment_failed, refunded, cancelled], default: settled }, description: "Order-level state (guide §8.2). Default `settled` (the only orders that count as sales); `all` for every state. [缺] the reference implementation accepts settled | all only." }
+        - { name: trade_status, in: query, schema: { type: string, enum: [settled, all, in_progress, pending_review, payment_failed, refunded, cancelled], default: settled }, description: "Order-level state (guide §8.2). Default `settled` (the only orders that count as sales); `all` for every state; any one of the six states filters on the normalised value. An unrecognised value is a 400, not an empty list." }
         - { name: updated_from, in: query, schema: { type: string, format: date-time }, description: "Filter on `updated_at` instead of `taken_at` — the only reliable way to poll late-settling, revised or refunded orders (open-door smart cabinets). [缺]" }
         - { name: updated_to, in: query, schema: { type: string, format: date-time }, description: "[缺]" }
         - { name: cursor, in: query, schema: { type: string } }
@@ -1196,7 +1196,7 @@ components:
       required: [sku_id, source]
       properties:
         sku_id: { $ref: "#/components/schemas/SkuId" }
-        source: { type: string, enum: [barcode, manual, suggested], description: Only barcode and manual aliases may be used to place orders }
+        source: { type: string, enum: [barcode, manual, vendor, suggested], description: "barcode, manual and vendor aliases may be used to place orders; suggested may not. `vendor` is implied on every read from a declared shared sku space (guide §5.4), never stored, and always carries confirmed_at: null." }
         confirmed_at: { type: [string, "null"], format: date-time }
     SkuRecord:
       type: object
@@ -1708,7 +1708,7 @@ components:
                   quantity: { type: integer }
     RunStatus:
       type: string
-      enum: [blocked, nothing_to_do, pending_approval, rejected, approved, placed, delivered]
+      enum: [blocked, nothing_to_do, superseded, pending_approval, rejected, approved, placed, delivered]
     ReplenishmentRun:
       type: object
       required: [ucp, id, status, currency, line_items, fulfillment, totals]
@@ -1719,6 +1719,7 @@ components:
         week_of: { type: string, format: date }
         fulfiller: { type: string, enum: [simulated, supply, machine_platform], description: "Where `place` routes the run (guide §10.2): a supply checkout, the machine platform's own restock order (namespace declares replenishment.order), or the simulated supplier. [缺] only simulated today" }
         external_ref: { type: string, description: "The fulfiller's own order number once placed. [缺]" }
+        superseded_by: { type: string, description: "A later plan replaced this one (guide §10.2). Only one run per route is ever live; `place` on a superseded run is a 409, because the stale approval card is already in someone's chat tool." }
         currency: { type: string, enum: [CNY] }
         line_items:
           type: array
@@ -1730,10 +1731,16 @@ components:
                   location: { type: string }
                   source:
                     type: object
-                    description: Resolved purchasable SKU for this machine item (via /skus/resolve); missing → unresolved_sku on place
+                    description: "Resolved purchasable SKU for this machine item (guide §5.4). Missing, or pointing at something the supplier no longer carries → an unresolved_sku warning whenever the run is read, and again on place."
                     properties:
                       sku_id: { $ref: "#/components/schemas/SkuId" }
                       quantity_unit: { $ref: "#/components/schemas/QuantityUnit" }
+                  transfer:
+                    type: object
+                    description: "Units to move from another machine on the route instead of buying (guide §10.2). `quantity` above is already net of these, so a line may be quantity 0 with a transfer — a stop on the trip, not an order."
+                    properties:
+                      quantity: { type: integer, minimum: 1 }
+                      from: { type: array, items: { type: string }, description: Machine ids holding this product unsold }
         fulfillment:
           type: object
           properties:

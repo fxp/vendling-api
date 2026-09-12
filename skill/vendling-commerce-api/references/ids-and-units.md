@@ -49,7 +49,18 @@ The same physical good in other namespaces:
 "aliases": [{ "sku_id": "acme-supply:10088", "source": "manual", "confirmed_at": "2026-09-01T10:00:00+08:00" }]
 ```
 
-- `source`: `barcode` (both sides carry an EAN), `manual` (operator confirmed), `suggested`
-  (name similarity, unconfirmed). Only `barcode` and `manual` may be used to place an order;
-  `resolve` never returns `suggested`.
+- `source`: `barcode` (both sides carry an EAN), `manual` (operator confirmed), `vendor`
+  (the vendor declared that its two namespaces share one product id space), `suggested`
+  (name similarity, unconfirmed). `barcode`, `manual` and `vendor` may be used to place an
+  order; `suggested` may not — it is a guess waiting for a person.
 - Aliases are symmetric. Record them with `PUT /skus/{id}/aliases` only after the user confirmed the match.
+- A `vendor` alias is **implied on every read**, never stored, and carries `confirmed_at: null`.
+  It comes from the registration, not from a request: you cannot assert one on a vendor's
+  behalf, and `PUT …/aliases` with `source: "vendor"` is recorded as `manual` — you are still
+  saying these two are the same product, under your own name. A stored alias for the same
+  `sku_id` wins over the implied one.
+- **A shared id space says "same numbering", not "in stock".** `purchasable_from[]` lists only
+  what the supplier carries today and can be priced; a mapping the supplier has dropped stays
+  visible in `aliases[]` with an `unresolved_sku` warning. A catalogue that could not be
+  REACHED is a third answer: the entry is kept and the warning says why, because unknown is
+  not absent.
