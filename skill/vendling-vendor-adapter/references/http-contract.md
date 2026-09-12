@@ -59,7 +59,7 @@ Account-wide sales, one record per order, newest first or oldest first (either),
 |---|---|---|---|
 | `orderNo` | string | yes | unique, stable |
 | `status`, `statusLabel` | string | yes / no | your raw status and its label |
-| `state` | enum | recommended | `in_progress` \| `pending_review` \| `settled` \| `payment_failed` \| `refunded` \| `cancelled` |
+| `state` | enum | recommended; **required when `lines` is empty** | `in_progress` \| `pending_review` \| `settled` \| `payment_failed` \| `refunded` \| `cancelled` |
 | `locationId` | string | yes | machine id |
 | `totalFen` | integer | yes | amount actually charged |
 | `createdAt` | ms or null | yes | order creation |
@@ -71,6 +71,16 @@ Account-wide sales, one record per order, newest first or oldest first (either),
 
 Spiral vending machines: `createdAt = takenAt = settledAt`, `finalized: true`, `state: "settled"`.
 Open-door / vision cabinets: the order exists from door close; walk `in_progress → pending_review → settled | payment_failed`, bump `updatedAt` on every change, and support `by=updated`.
+
+**A record with no lines must say what it is.** Real accounts return them — a session that opened
+and has not resolved, one that closed with nothing taken — and they are legitimate, not malformed.
+But the caller is allowed to derive state from the lines when you send none ("all `paid` →
+settled"), and `[].every()` is vacuously true: an empty `lines` with no `state` books as a settled
+¥0 sale. So send `state` on those, and never `settled` with an empty `lines`.
+
+A `status` the adapter does not recognise should map to **no** `state` at all rather than a guess.
+The raw string still travels in `status` / `statusLabel`, and a missing `state` tells the caller it
+is looking at something new — which is more useful than a confident wrong word.
 
 ### `POST {base}/prices` — capability `pricing`
 
@@ -132,6 +142,16 @@ Request `{ "ref": "po_20260910_001", "lines": [ { "vendorSku": "10023", "quantit
 `state` ∈ `ordered` \| `arrived` \| `cancelled`. `logistics[]` is passed through as-is.
 
 ## Registration (operator side)
+
+`sharesSkuSpaceWith` — add it when this vendor **runs the machines and also sells the goods with
+one product id space for both roles**, i.e. `<vendor>-machine:N` and `<vendor>-supply:N` are the
+same product. Declared once, on either side; the relation is symmetric and only holds between the
+same vendor's two roles. It matters most when your catalogue publishes no barcodes: without it
+there is nothing to bridge the two namespaces, and the operator has to confirm every product by
+hand — until then their restock plan computes and nothing on it can be bought.
+
+The declaration says "same numbering", not "in stock": the caller still checks your catalogue
+before offering anything as purchasable.
 
 ```json
 [
