@@ -14,13 +14,16 @@
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },
-  // ── TAKEN OFFLINE 2026-09-11 ────────────────────────────────────────
-  // Routes removed at the owner's request. This Worker is stateless — it
-  // serves a build of spec/ + openapi/ — so nothing is lost by detaching
-  // the domain, and `wrangler deploy` with the lines below restored puts
-  // it straight back.
-  //   { "pattern": "vendling.dev", "custom_domain": true },
-  //   { "pattern": "www.vendling.dev", "custom_domain": true }
-  "routes": [],
+  // ── BACK ONLINE 2026-09-14 ──────────────────────────────────────────
+  // Offline from 2026-09-11 (routes detached at the owner's request); this
+  // Worker is stateless — it serves a build of spec/ + openapi/ — so
+  // nothing was lost by detaching the domain, and restoring the routes
+  // below plus `wrangler deploy` puts it straight back. Restored together
+  // with vendling-core (vendling.xiaopingfeng.com), the API this site
+  // documents.
+  "routes": [
+    { "pattern": "vendling.dev", "custom_domain": true },
+    { "pattern": "www.vendling.dev", "custom_domain": true }
+  ],
   "workers_dev": false
 }
