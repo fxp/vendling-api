@@ -5,7 +5,9 @@
   // vendling.dev lives in the same Cloudflare account, so the custom_domain
   // routes get their DNS records and certificates from wrangler.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "vendling-dev",
+  // 原名 vendling-dev，2026-09-14 改名：仓库 fxp/vendling-dev 是项目管理 Agent，
+  // 跟这个文档站是两回事，同名会让人在 Cloudflare 控制台上认错。
+  "name": "vendling-docs",
   "account_id": "0356d59ccdcff356bf3bbdb580bbaa60",
   "compatibility_date": "2026-08-01",
   "assets": {
