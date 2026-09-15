@@ -62,10 +62,10 @@ export VENDLING_BASE_URL='https://vendling-core-staging.fxp007.workers.dev'
 
 ## 3. Verify the connection
 
-Run the bundled client against the roster of machines. It uses only the Python standard library:
+Run the bundled client against the roster of machines. It uses only the Python standard library — `<skills-directory>` is wherever you installed the skill to in step 1 (`~/.claude/skills` for Claude Code):
 
 ```
-python3 ~/.claude/skills/vendling-commerce-api/scripts/vendling_client.py locations
+python3 <skills-directory>/vendling-commerce-api/scripts/vendling_client.py locations
 ```
 
 Expected: a JSON object with a `locations` array (two machines on the production route). A `401` means the token is wrong; a `503` means the deployment has no token configured at all; a `403` with Cloudflare error 1010 means the User-Agent was rejected (the bundled client sets one).
