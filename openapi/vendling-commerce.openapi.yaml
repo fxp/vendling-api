@@ -29,7 +29,7 @@ externalDocs:
   description: Universal Commerce Protocol specification
   url: https://ucp.dev/2026-08-25/specification/overview/
 servers:
-  - url: https://vendling.xiaopingfeng.com/ucp/v1
+  - url: https://vendling.sh/ucp/v1
     description: Production. Check GET /.well-known/ucp for the live capability and namespace registry.
   - url: https://vendling-core-staging.fxp007.workers.dev/ucp/v1
     description: Staging (mock data, no supplier credentials, so nothing here can spend money)

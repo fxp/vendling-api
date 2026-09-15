@@ -7,7 +7,7 @@ description: >
   replenishment plans/runs, approvals, event stream. Use this skill whenever an agent or
   user wants to read or act on a Vendling machine or its supply chain: "查库存", "看流水",
   "补货", "下采购单", "改价", "审批", "订阅事件", "接 Vendling", "UCP 售货机", "vendling API",
-  "sku_id", or any mention of vendling.dev / vendling.xiaopingfeng.com — even if they don't
+  "sku_id", or any mention of vendling.dev / vendling.sh — even if they don't
   say "API". Also use it when writing code or another skill that talks to Vendling.
 ---
 
@@ -24,8 +24,8 @@ Machine-readable index: https://vendling.dev/api/llms.txt.
 
 | What | Where |
 |---|---|
-| Base URL (production) | `https://vendling.xiaopingfeng.com/ucp/v1` |
-| Discovery | `GET https://vendling.xiaopingfeng.com/.well-known/ucp` (public) |
+| Base URL (production) | `https://vendling.sh/ucp/v1` |
+| Discovery | `GET https://vendling.sh/.well-known/ucp` (public) |
 | Staging (mock data, no supplier credentials — nothing can spend money) | `https://vendling-core-staging.fxp007.workers.dev/ucp/v1` |
 | Reference | https://vendling.dev/api/reference |
 
@@ -85,12 +85,12 @@ with HTTP 403 error 1010 — send a descriptive UA; that 403 is not an auth fail
 
 ## 4. Recipes
 
-Set `U=https://vendling.xiaopingfeng.com/ucp/v1`, `H='authorization: Bearer '"$VENDLING_AUTH_TOKEN"`,
+Set `U=https://vendling.sh/ucp/v1`, `H='authorization: Bearer '"$VENDLING_AUTH_TOKEN"`,
 `J='content-type: application/json'`. Or use `scripts/vendling_client.py` (stdlib only), which wraps all of these.
 
 **Discover** — which vendors/namespaces exist, which is the default
 ```bash
-curl -s https://vendling.xiaopingfeng.com/.well-known/ucp | jq '.ucp.capabilities["com.xiaopingfeng.vendling.sku"][0].config'
+curl -s https://vendling.sh/.well-known/ucp | jq '.ucp.capabilities["com.xiaopingfeng.vendling.sku"][0].config'
 curl -s -H "$H" $U/namespaces
 ```
 

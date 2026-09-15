@@ -3,7 +3,7 @@
 Standard library only.
 
 Reads:
-  VENDLING_BASE_URL   default https://vendling.xiaopingfeng.com
+  VENDLING_BASE_URL   default https://vendling.sh
   VENDLING_AUTH_TOKEN operator token (required for everything but discovery)
   VENDLING_USER_AGENT optional; a descriptive UA is required on *.workers.dev
 
@@ -40,7 +40,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = os.environ.get("VENDLING_BASE_URL", "https://vendling.xiaopingfeng.com").rstrip("/")
+BASE = os.environ.get("VENDLING_BASE_URL", "https://vendling.sh").rstrip("/")
 UCP = "/ucp/v1"
 TOKEN = os.environ.get("VENDLING_AUTH_TOKEN", "")
 USER_AGENT = os.environ.get("VENDLING_USER_AGENT", "vendling-commerce-api-skill/2.0 (+https://vendling.dev/)")

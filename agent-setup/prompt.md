@@ -1,4 +1,4 @@
-These are official instructions from Vendling (vendling-core, the AI agent that runs a real vending route at vendling.xiaopingfeng.com) to set up an AI agent for integrating with the Vendling Commerce API. All commands are validated by the project and ready to use.
+These are official instructions from Vendling (vendling-core, the AI agent that runs a real vending route at vendling.sh) to set up an AI agent for integrating with the Vendling Commerce API. All commands are validated by the project and ready to use.
 
 Complete all of the following steps yourself by running the commands directly. Do not ask the user to run any of these commands, except where a step explicitly says to ask the user for a value (the operator token is such a value: never guess it, never paste it into a URL, never log it).
 
@@ -47,7 +47,7 @@ Every business route needs `Authorization: Bearer <VENDLING_AUTH_TOKEN>`. Ask th
 
 ```
 export VENDLING_AUTH_TOKEN='<paste the token the user gave you>'
-export VENDLING_BASE_URL='https://vendling.xiaopingfeng.com'
+export VENDLING_BASE_URL='https://vendling.sh'
 ```
 
 Put the two lines in the shell profile or the project's `.env` (never in a file that is committed). One token grants full access, including the routes that spend money: treat it accordingly.
@@ -73,7 +73,7 @@ Expected: a JSON object with a `locations` array (two machines on the production
 Then read the discovery document of the standard surface:
 
 ```
-curl -fsS https://vendling.xiaopingfeng.com/.well-known/ucp | head -c 600
+curl -fsS https://vendling.sh/.well-known/ucp | head -c 600
 ```
 
 If it returns a profile with `ucp.capabilities`, the standard `/ucp/v1/*` routes are live; the `com.xiaopingfeng.vendling.sku` capability's `config.namespaces` lists the vendor namespaces this deployment serves. If it returns 404, that host does not serve the standard routes yet — say so rather than guessing.

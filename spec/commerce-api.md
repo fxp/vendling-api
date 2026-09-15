@@ -324,7 +324,7 @@ namespace = "<vendor>-<role>"      role ∈ supply | machine
     { "type": "error", "code": "kill_switch_engaged", "severity": "requires_buyer_review", "path": "$",
       "content": "kill switch is engaged — real writes are frozen" }
   ],
-  "continue_url": "https://vendling.xiaopingfeng.com/"
+  "continue_url": "https://vendling.sh/"
 }
 ```
 
@@ -354,7 +354,7 @@ namespace = "<vendor>-<role>"      role ∈ supply | machine
 
 ## 4. 发现档案 `/.well-known/ucp`
 
-**[有]** 公开、无需 token。`endpoint` 指向标准基址 `https://vendling.xiaopingfeng.com/ucp/v1`。
+**[有]** 公开、无需 token。`endpoint` 指向标准基址 `https://vendling.sh/ucp/v1`。
 节选（完整档案以线上为准）：
 
 ```json
@@ -362,7 +362,7 @@ namespace = "<vendor>-<role>"      role ∈ supply | machine
   "ucp": {
     "version": "2026-08-25",
     "services": {
-      "dev.ucp.shopping": [{ "version": "2026-08-25", "transport": "rest", "endpoint": "https://vendling.xiaopingfeng.com/ucp/v1", "spec": "…", "schema": "…" }]
+      "dev.ucp.shopping": [{ "version": "2026-08-25", "transport": "rest", "endpoint": "https://vendling.sh/ucp/v1", "spec": "…", "schema": "…" }]
     },
     "capabilities": {
       "dev.ucp.shopping.catalog.search": [{ "version": "2026-08-25", "spec": "…", "schema": "…" }],
@@ -739,7 +739,7 @@ Idempotency-Key: po_20260909_001
   ],
   "actions": { "com.xiaopingfeng.vendling.approval": [{ "id": "dec-1757400000000-3" }] },
   "links": [{ "type": "documentation", "url": "https://vendling.dev/api/" }],
-  "continue_url": "https://vendling.xiaopingfeng.com/tasks",
+  "continue_url": "https://vendling.sh/tasks",
   "expires_at": "2026-09-10T14:03:00+08:00"
 }
 ```
@@ -809,7 +809,7 @@ POST /checkout-sessions/po_20260909_001/complete
   "label": "SUP-2026090912345",
   "kind": "purchase",
   "checkout_id": "po_20260909_001",
-  "permalink_url": "https://vendling.xiaopingfeng.com/ucp/v1/orders/po_20260909_001",
+  "permalink_url": "https://vendling.sh/ucp/v1/orders/po_20260909_001",
   "currency": "CNY",
   "line_items": [
     { "id": "li_1", "item": { "id": "acme-supply:10023", "title": "…", "price": 5700, "quantity_unit": { "unit": "BX", "contains": 15 } },

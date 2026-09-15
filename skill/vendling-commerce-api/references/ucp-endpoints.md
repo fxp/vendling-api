@@ -1,6 +1,6 @@
 # Endpoints
 
-Base: `https://vendling.xiaopingfeng.com/ucp/v1` (production), `https://vendling-core-staging.fxp007.workers.dev/ucp/v1` (staging, mock data).
+Base: `https://vendling.sh/ucp/v1` (production), `https://vendling-core-staging.fxp007.workers.dev/ucp/v1` (staging, mock data).
 Spec: https://vendling.dev/api/ · OpenAPI: https://vendling.dev/api/openapi.yaml.
 
 Envelope on every response: `{"ucp": {"version": "2026-08-25", "status": "success|error", "capabilities": {...}}, ...}`.

@@ -38,19 +38,6 @@ DOCS_REPO = "https://github.com/fxp/vendling-api"
 CORE_REPO = "https://github.com/fxp/vendling-core"  # private
 BUILT = date.today().isoformat()
 
-# Rendered under /docs/<slug>/ only with --project-docs (paths relative to that checkout).
-PROJECT_DOCS: list[tuple[str, str, str]] = [
-    ("readme", "README.md", "项目总览：四个循环、护栏、推理、记忆、运行方式"),
-    ("routes", "docs/api.md", "按场景组织的现有路由清单（旧接口面）"),
-    ("event-system", "docs/event-system.md", "事件系统接入指南：Event 与 Decision 的区别、写入、实时流"),
-    ("face-split", "docs/face-split.md", "顾客界面拆成独立 Worker 的原因、桥接契约与安全边界"),
-    ("scenarios", "docs/scenarios.md", "按场景运营：两台真机 14 天真实数据得出的结论"),
-    ("agent-framework-requirements", "docs/agent-framework-requirements.md", "Agent 框架需求与架构决策汇总"),
-    ("face-data-interfaces", "docs/face/DATA-INTERFACES.md", "顾客界面的数据接口"),
-    ("face-persona", "docs/face/VM-07-persona.md", "顾客界面人格设定 VM-07"),
-    ("face-devlog", "docs/face/DEVLOG.md", "顾客界面开发日志"),
-]
-
 CSS = """
 :root{--bg:#fbfaf7;--fg:#1c1b18;--fg-dim:#4a4741;--fg-mute:#8a857b;--line:#e6e1d6;--code-bg:#f2efe7;--accent:#b8452b;--accent-soft:#f6e6e1;--side:#f5f2eb;--w:78ch}
 @media(prefers-color-scheme:dark){:root{--bg:#0f0e0c;--fg:#ecebe6;--fg-dim:#bdb9b0;--fg-mute:#7f7b72;--line:#2a2823;--code-bg:#1a1916;--accent:#e2745a;--accent-soft:#2b1a15;--side:#141310}}
@@ -156,13 +143,12 @@ def slugify(value: str, separator: str) -> str:
 
 
 class Site:
-    """portal = vendling.dev (absolute paths, home, optional /docs/);
+    """portal = vendling.dev (absolute paths, root redirects to /api/);
     mirror = the /api/ pages only, relative links, for another host."""
 
-    def __init__(self, portal: bool, out: Path, with_docs: bool):
+    def __init__(self, portal: bool, out: Path):
         self.portal = portal
         self.out = out
-        self.with_docs = with_docs
         self.api_out = out / "api" if portal else out
 
     def api_href(self, rel: str, from_dir: str = "") -> str:
@@ -180,9 +166,7 @@ class Site:
 def head(site: Site, title: str, description: str, active: str, canonical: str, from_dir: str = "", extra_css: str = "", section: str = "API") -> str:
     tabs = [("", "指南 Guide", "index"), ("reference", "API Reference", "reference"), ("openapi.yaml", "OpenAPI", ""), ("llms.txt", "llms.txt", ""), ("skill/", "Agent Skill", "skill")]
     if site.portal:
-        tabs = [("/", "首页", "home"), *[(site.api_href(rel), label, key) for rel, label, key in tabs]]
-        if site.with_docs:
-            tabs.append(("/docs/", "项目文档", "docs"))
+        tabs = [(site.api_href(rel), label, key) for rel, label, key in tabs]
     else:
         tabs = [(site.api_href(rel, from_dir), label, key) for rel, label, key in tabs]
     tab_html = "".join(f'<a href="{href}" class="{"on" if key == active and key else ""}">{label}</a>' for href, label, key in tabs)
@@ -206,7 +190,7 @@ def head(site: Site, title: str, description: str, active: str, canonical: str, 
 """
 
 
-FOOT = f'<div class="foot">Vendling · 文档源码 <a href="{DOCS_REPO}" rel="noopener">vendling-api</a> · <a href="{CANONICAL}">vendling.dev</a> · 镜像 <a href="https://xiaopingfeng.com/apps/vendling/api/">xiaopingfeng.com</a> · fxp007 · 2026</div>'
+FOOT = f'<div class="foot">Vendling · 文档源码 <a href="{DOCS_REPO}" rel="noopener">vendling-api</a> · <a href="{CANONICAL}">vendling.dev</a> · fxp007 · 2026</div>'
 
 
 def render_md(text: str, toc_depth: str = "2-3") -> tuple[str, str]:
@@ -274,10 +258,12 @@ def build_guide(site: Site) -> str:
         "[`openapi/vendling-commerce.openapi.yaml`](openapi/vendling-commerce.openapi.yaml)",
         "[`openapi.yaml`](openapi.yaml) · [API Reference](reference) · [Agent Skill](skill/)",
     )
-    # The spec links to vendling-core's other docs by file name; that repo is private.
+    # The spec links to vendling-core's other docs by file name, and that repo is
+    # private. Always out to GitHub: this site used to be able to render those
+    # files locally under /docs/, which meant a public site one flag away from
+    # publishing a private repo's internals.
     for name in ("api.md", "event-system.md", "face-split.md", "scenarios.md"):
-        target = {"api.md": "/docs/routes/", "event-system.md": "/docs/event-system/", "face-split.md": "/docs/face-split/", "scenarios.md": "/docs/scenarios/"}[name]
-        src = src.replace(f"]({name})", f"]({target if site.with_docs else CORE_REPO + '/blob/main/docs/' + name})")
+        src = src.replace(f"]({name})", f"]({CORE_REPO}/blob/main/docs/{name})")
     body, toc = render_md(src)
     body = wrap_profiles(body)
     body = mermaid_blocks(body)
@@ -383,7 +369,7 @@ def build_skill_index(site: Site, files: list[Path], skill_out: Path, skill_dir:
         if name == "vendling-commerce-api"
         else "给售货机厂商、智能柜 / 冰柜平台、供应商的 Agent 用：把自己的接口对照附录 A.6 的契约做成八个 HTTPS 端点，用自带的检查脚本自检，产出运营者登记用的 JSON。零代码接入，不用改 Vendling。"
     )
-    trigger = "Vendling / 售货机库存 / 补货 / vendling.xiaopingfeng.com" if name == "vendling-commerce-api" else "接入 Vendling / 做适配器 / 字段对照 / VENDLING_HTTP_VENDORS"
+    trigger = "Vendling / 售货机库存 / 补货 / vendling.sh" if name == "vendling-commerce-api" else "接入 Vendling / 做适配器 / 字段对照 / VENDLING_HTTP_VENDORS"
     page = head(site, f"Vendling · Agent Skill · {name}", desc[:300], "skill", API_BASE + rel, from_dir=rel)
     page += f"""<div class="wrap">
 <aside><div class="meta">Skill</div>{toc}</aside>
@@ -414,8 +400,8 @@ def build_api_llms() -> str:
 > Spec version 2026-09-09, aligned with UCP 2026-08-25. Amounts are integer CNY fen;
 > ids are `<vendor>-<role>:<vendor_sku>`; the live namespaces come from GET /ucp/v1/namespaces.
 
-Routes live at `https://vendling.xiaopingfeng.com/ucp/v1/*`; discovery at
-`GET https://vendling.xiaopingfeng.com/.well-known/ucp` (public). Everything else is
+Routes live at `https://vendling.sh/ucp/v1/*`; discovery at
+`GET https://vendling.sh/.well-known/ucp` (public). Everything else is
 behind `Authorization: Bearer <VENDLING_AUTH_TOKEN>`. The docs never name a vendor: machines
 and suppliers plug in through adapters and the docs use the placeholder vendor `acme`. Two actions spend real money or
 change a live price and require the JSON boolean `confirm: true`. Staging (mock data, no
@@ -449,7 +435,7 @@ supplier credentials): `https://vendling-core-staging.fxp007.workers.dev`.
 - [Portal index]({CANONICAL}llms.txt)
 - [Docs source on GitHub]({DOCS_REPO})
 - [UCP specification](https://ucp.dev/2026-08-25/specification/overview/)
-- [Vendling project page](https://xiaopingfeng.com/apps/vendling/)
+- [Vendling project page](https://vendling.ai)
 """
 
 
@@ -486,190 +472,73 @@ def build_api(site: Site) -> None:
         (extra_out / "index.html").write_text(build_skill_index(site, efiles, extra_out, extra, rel), encoding="utf-8")
 
 
-# ── /docs/ (optional, from a local vendling-core checkout) and home ───────
+# ── the site root ────────────────────────────────────────────────────────
 
-DOC_LINK_MAP = {
-    "README.md": "/docs/readme/",
-    "docs/api.md": "/docs/routes/", "api.md": "/docs/routes/",
-    "docs/event-system.md": "/docs/event-system/", "event-system.md": "/docs/event-system/",
-    "docs/face-split.md": "/docs/face-split/", "face-split.md": "/docs/face-split/",
-    "docs/scenarios.md": "/docs/scenarios/", "scenarios.md": "/docs/scenarios/",
-    "docs/agent-framework-requirements.md": "/docs/agent-framework-requirements/", "agent-framework-requirements.md": "/docs/agent-framework-requirements/",
-    "docs/commerce-api.md": "/api/", "commerce-api.md": "/api/",
-    "docs/face/DATA-INTERFACES.md": "/docs/face-data-interfaces/", "face/DATA-INTERFACES.md": "/docs/face-data-interfaces/", "DATA-INTERFACES.md": "/docs/face-data-interfaces/",
-    "docs/face/VM-07-persona.md": "/docs/face-persona/", "face/VM-07-persona.md": "/docs/face-persona/", "VM-07-persona.md": "/docs/face-persona/",
-    "docs/face/DEVLOG.md": "/docs/face-devlog/", "face/DEVLOG.md": "/docs/face-devlog/", "DEVLOG.md": "/docs/face-devlog/",
-    "docs/architecture.html": "/docs/architecture.html", "architecture.html": "/docs/architecture.html",
-}
+def build_root_redirect(site: Site) -> str:
+    """The site root. This Worker serves the API documentation and nothing
+    else, so `/` is a pointer at it rather than a portal of its own.
 
-
-def rewrite_doc_links(text: str, src_path: Path, core: Path) -> str:
-    rel_dir = src_path.parent.relative_to(core).as_posix()
-
-    def repl(m: re.Match) -> str:
-        label, href = m.group(1), m.group(2)
-        if href.startswith(("http://", "https://", "#", "mailto:")):
-            return m.group(0)
-        path, _, frag = href.partition("#")
-        norm = path.lstrip("./")
-        while norm.startswith("../"):
-            norm = norm[3:]
-        key = norm if norm in DOC_LINK_MAP else (f"{rel_dir}/{norm}" if rel_dir != "." else norm)
-        if key in DOC_LINK_MAP or norm in DOC_LINK_MAP:
-            target = DOC_LINK_MAP.get(key) or DOC_LINK_MAP[norm]
-            return f"[{label}]({target}{'#' + frag if frag else ''})"
-        repo_path = norm if rel_dir == "." or norm.startswith(("src/", "test/", "docs/", "skills/", "scripts/", "face-worker/", "public/")) else f"{rel_dir}/{norm}"
-        return f"[{label}]({CORE_REPO}/blob/main/{repo_path}{'#' + frag if frag else ''})"
-
-    return re.sub(r"\[([^\]]*)\]\(([^)\s]+)\)", repl, text)
-
-
-def first_heading(text: str, fallback: str) -> str:
-    m = re.search(r"^#\s+(.+)$", text, re.M)
-    return re.sub(r"[`*]", "", m.group(1)).strip() if m else fallback
-
-
-def build_docs(site: Site, core: Path) -> list[tuple[str, str, str]]:
-    out = site.out
-    entries: list[tuple[str, str, str]] = []
-    for slug, rel, blurb in PROJECT_DOCS:
-        src = core / rel
-        if not src.exists():
-            continue
-        text = src.read_text(encoding="utf-8")
-        title = first_heading(text, slug)
-        entries.append((slug, title, blurb))
-        body, toc = render_md(rewrite_doc_links(text, src, core))
-        page = head(site, f"{title} · Vendling Developers", blurb, "docs", f"{CANONICAL}docs/{slug}/", section="Docs")
-        page += f"""<div class="wrap">
-<aside><div class="meta"><a href="/docs/">项目文档</a></div>{toc}</aside>
-<main><article>
-<div class="meta">{html.escape(rel)} · 构建 {BUILT}</div>
-{body}
-{FOOT}
-</article></main>
-</div>
-<script>{MODE_JS}</script>
-</body></html>"""
-        d = out / "docs" / slug
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "index.html").write_text(page, encoding="utf-8")
-    arch = core / "docs" / "architecture.html"
-    if arch.exists():
-        text = arch.read_text(encoding="utf-8")
-        for key, target in DOC_LINK_MAP.items():
-            text = text.replace(f'href="{key}"', f'href="{target}"').replace(f'href="../{key}"', f'href="{target}"')
-        (out / "docs").mkdir(parents=True, exist_ok=True)
-        (out / "docs" / "architecture.html").write_text(text, encoding="utf-8")
-    items = "".join(f'<li><a href="/docs/{s}/">{html.escape(t)}</a><small>{html.escape(b)}</small></li>' for s, t, b in entries)
-    if arch.exists():
-        items += '<li><a href="/docs/architecture.html">架构图</a><small>docs/architecture.html，交互式页面，原样提供</small></li>'
-    page = head(site, "项目文档 · Vendling Developers", "vendling-core 仓库里的开发文档。", "docs", f"{CANONICAL}docs/", section="Docs")
-    page += f"""<div class="wrap single"><main><article>
-<div class="meta">Vendling · 项目文档 · 构建 {BUILT}</div>
-<h1>项目文档</h1>
-<p>vendling-core 仓库里的开发文档，按源文件渲染。接口相关的看 <a href="/api/">API 指南</a>。</p>
-<ul class="doclist">{items}</ul>
-{FOOT}
-</article></main></div>
-<script>{MODE_JS}</script>
-</body></html>"""
-    (out / "docs").mkdir(parents=True, exist_ok=True)
-    (out / "docs" / "index.html").write_text(page, encoding="utf-8")
-    return entries
-
-
-def build_home(site: Site, entries: list[tuple[str, str, str]]) -> str:
-    docs_card = '<a class="card" href="/docs/"><b>项目文档</b>README、事件系统、顾客界面拆分、场景运营、框架需求<small><br>vendling-core/docs/</small></a>' if site.with_docs else ""
-    docs_section = ""
-    if entries:
-        docs = "".join(f'<li><a href="/docs/{slug}/">{html.escape(title)}</a><small>{html.escape(blurb)}</small></li>' for slug, title, blurb in entries[:5])
-        docs_section = f'<h2 id="docs">项目文档</h2><ul class="doclist">{docs}</ul><p><a href="/docs/">全部文档 →</a></p>'
-    page = head(site, "Vendling Developers", "Vendling 售货机智能体的开发者门户：UCP 对齐的商品类 API 规范与参考、Agent 接入 skill、一键接入。", "home", CANONICAL, section="Home")
-    page += f"""<div class="wrap single"><main><article class="wide">
-<div class="hero">
-<div class="meta">vendling.dev · 构建 {BUILT}</div>
+    A meta refresh plus a real link, because the deployment is static
+    assets with no Worker script — there is nowhere to issue a 302 from.
+    `canonical` points at /api/ so a crawler indexes the guide, not this."""
+    return f"""<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vendling Developers</title>
+<link rel="canonical" href="{API_BASE}">
+<meta name="robots" content="noindex,follow">
+<meta http-equiv="refresh" content="0; url=/api/">
+<link rel="icon" href="/favicon.svg">
+<style>{CSS}</style></head><body>
+<div class="wrap single"><main><article>
 <h1>Vendling Developers</h1>
-<p>Vendling 是一个自主经营真实售货机线路的 AI 智能体（北京，两台机器，生产运行中）。这里是给开发者和其他 Agent 的接入入口：按 Google UCP 对齐的商品类接口规范、OpenAPI 参考、接入 skill，以及一句话完成接入的 agent-setup。文档只讲协议，不讲厂商：设备与供货方通过适配器接入。</p>
-</div>
-<div class="cards">
-<a class="card" href="/api/"><b>API 指南</b>规范正文：目录、结账、订单、位置、改价、补货、审批、事件；按"我有什么"筛选章节<small><br>spec/commerce-api.md</small></a>
-<a class="card" href="/api/reference"><b>API Reference</b>OpenAPI 3.1，Scalar 渲染，每个端点的请求 / 响应 / schema<small><br>openapi.yaml</small></a>
-<a class="card" href="/api/skill/"><b>Agent Skill</b>给 Claude Code 等 Agent 的接入 skill：ID 规则、安全规则、配方、Python 客户端<small><br>vendling-commerce-api</small></a>
-<a class="card" href="/api/#agent-setup"><b>Agent 一键接入</b>一句话让 Agent 自己装好 skill、配好 token、验证连接<small><br>agent-setup/prompt.md</small></a>
-<a class="card" href="/api/skills/vendling-vendor-adapter/"><b>厂商 / 供应商接入 Skill</b>售货机平台或供货方零代码接入：八个 HTTPS 端点、自检脚本、登记 JSON<small><br>vendling-vendor-adapter</small></a>
-{docs_card}
-<a class="card" href="{DOCS_REPO}" rel="noopener"><b>文档源码 ↗</b>这个站的全部内容：规范、OpenAPI、skill、构建与部署<small><br>github.com/fxp/vendling-api</small></a>
-</div>
-<h2 id="quick">给 Agent 的三行</h2>
-<pre><code>curl -s https://vendling.xiaopingfeng.com/.well-known/ucp        # 发现档案（标准路由部署后返回）
-curl -s {CANONICAL}llms.txt                                # 全站索引
-Fetch and execute the appropriate instructions to set me up for Vendling from {API_BASE}agent-setup/prompt.md</code></pre>
-<h2 id="endpoints">部署地址</h2>
-<table><thead><tr><th>环境</th><th>基址</th><th>说明</th></tr></thead><tbody>
-<tr><td>生产</td><td><code>https://vendling.xiaopingfeng.com</code></td><td>真机、真钱；<code>/.well-known/ucp</code> 返回档案即标准路由 <code>/ucp/v1</code> 在线</td></tr>
-<tr><td>Staging</td><td><code>https://vendling-core-staging.fxp007.workers.dev</code></td><td>mock 数据、无供货方凭证，什么都花不了钱；token 向维护者索取</td></tr>
-</tbody></table>
-<p>API 由 <code>vendling-core</code>（Cloudflare Workers + Agents SDK，私有仓库）提供；本站只是文档。</p>
-{docs_section}
-{FOOT}
-</article></main></div>
-<script>{MODE_JS}</script>
-</body></html>"""
-    return page
+<p><a href="/api/">Vendling Commerce API 文档 →</a></p>
+</article></main></div></body></html>"""
 
 
-def build_portal_llms(entries: list[tuple[str, str, str]]) -> str:
-    docs = "\n".join(f"- [{title}]({CANONICAL}docs/{slug}/): {blurb}" for slug, title, blurb in entries)
-    docs_block = f"\n## Project docs\n\n{docs}\n" if entries else ""
+def build_portal_llms() -> str:
     return f"""# Vendling Developers
 
-> Developer portal for the Vendling Commerce API — the UCP-aligned interface of an AI agent
-> that runs a real vending route. Start with the API index below.
+> Documentation for the Vendling Commerce API — the UCP-aligned interface of an AI agent
+> that runs a real vending route. This site serves the API docs and nothing else.
 
 ## API
 
 - [API index]({API_BASE}llms.txt): guide, OpenAPI, skill, agent setup — read this first
 - [Guide]({API_BASE}) · [full markdown]({API_BASE}llms-full.txt) · [OpenAPI]({API_BASE}openapi.yaml)
 - [Agent setup prompt]({API_BASE}agent-setup/prompt.md)
-{docs_block}
+
 ## Source
 
 - [Docs on GitHub]({DOCS_REPO})
 """
 
 
-def build_portal(site: Site, core: Path | None) -> None:
+def build_portal(site: Site) -> None:
     out = site.out
     build_api(site)
-    entries = build_docs(site, core) if core else []
-    (out / "index.html").write_text(build_home(site, entries), encoding="utf-8")
-    (out / "llms.txt").write_text(build_portal_llms(entries), encoding="utf-8")
+    (out / "index.html").write_text(build_root_redirect(site), encoding="utf-8")
+    (out / "llms.txt").write_text(build_portal_llms(), encoding="utf-8")
     (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\n\nSitemap: {CANONICAL}sitemap.txt\n", encoding="utf-8")
-    urls = [CANONICAL, API_BASE, API_BASE + "reference", API_BASE + "skill/", API_BASE + "skills/vendling-vendor-adapter/"] + ([CANONICAL + "docs/"] if entries else []) + [f"{CANONICAL}docs/{s}/" for s, _, _ in entries]
+    urls = [API_BASE, API_BASE + "reference", API_BASE + "skill/", API_BASE + "skills/vendling-vendor-adapter/"]
     (out / "sitemap.txt").write_text("\n".join(urls) + "\n", encoding="utf-8")
     (out / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#b8452b"/><text x="32" y="43" font-family="Menlo,monospace" font-size="34" font-weight="700" text-anchor="middle" fill="#fbfaf7">V</text></svg>', encoding="utf-8")
-    (out / "404.html").write_text(head(site, "找不到 · Vendling Developers", "404", "", CANONICAL, section="404") + '<div class="wrap single"><main><article><h1>404</h1><p>这里没有东西。回 <a href="/">首页</a> 或 <a href="/api/">API 指南</a>。</p></article></main></div></body></html>', encoding="utf-8")
+    (out / "404.html").write_text(head(site, "找不到 · Vendling Developers", "404", "", CANONICAL, section="404") + '<div class="wrap single"><main><article><h1>404</h1><p>这里没有东西。这个站只有 <a href="/api/">API 文档</a>。</p></article></main></div></body></html>', encoding="utf-8")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mirror", action="store_true", help="build only the /api/ pages with relative links (for a mirror under another host)")
     ap.add_argument("--out", type=Path, help="output directory (default: dist/)")
-    ap.add_argument("--project-docs", type=Path, help="local vendling-core checkout; renders its README + docs/*.md under /docs/")
     args = ap.parse_args()
     out = args.out or (ROOT / "dist")
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    core = args.project_docs.resolve() if args.project_docs else None
-    if core and not (core / "README.md").exists():
-        raise SystemExit(f"--project-docs: {core} does not look like a vendling-core checkout")
-    site = Site(not args.mirror, out, bool(core))
+    site = Site(not args.mirror, out)
     if args.mirror:
         build_api(site)
     else:
-        build_portal(site, core)
+        build_portal(site)
     total = sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
     count = sum(1 for p in out.rglob("*") if p.is_file())
     print(f"built {out} ({total/1024:.0f} KB, {count} files): " + ", ".join(sorted(p.name for p in out.iterdir())))
