@@ -1,5 +1,11 @@
 # The HTTP adapter contract (spec appendix A.6)
 
+> **机器可读版本**：[`contracts/adapter-a6.json`](https://github.com/fxp/vendling-api/blob/main/contracts/adapter-a6.json)
+> 是这份契约的**唯一真源**。vendling-core 和每个适配器的 TypeScript 类型都由
+> `scripts/gen_adapter_types.py` 从它生成，两边的测试会跑 `--check`——所以这篇散文
+> 和代码里的形状不会悄悄分家。要接入的话，直接拿那个 JSON 生成你那边的类型。
+
+
 Base URL: anything you choose, e.g. `https://api.acme.example/vendling`. Every request from
 Vendling carries `Authorization: Bearer <token>`, `Accept: application/json` and
 `User-Agent: vendling-http-adapter/1`. Timeout is 15 s per call.

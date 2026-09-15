@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Vendling adapter contract (spec appendix A.6) — wire shapes",
+  "version": "2026-09-15",
+  "description": "The single source of truth for the JSON that crosses between vendling-core and an adapter Worker. Two rules hold everywhere: money is an integer in fen, never a float and never yuan; time is epoch milliseconds, or null when the vendor's timestamp could not be parsed. Seconds are wrong by 1000x. A third rule is about failure and is the one integrations get wrong: a broken credential must never look like an empty machine, because upstream that becomes 'nothing to restock'.",
+  "types": {
+    "LedgerLineStatus": { "enum": ["paid", "unpaid", "refunded", "refund_failed", "cancelled"] },
+    "TradeState": {
+      "doc": "Order-level state, normalised across vendors. A spiral machine is settled the moment it dispenses; an open-door cabinet creates the order at door close and walks through recognition, possibly review, then payment.",
+      "enum": ["in_progress", "pending_review", "settled", "payment_failed", "refunded", "cancelled"]
+    },
+    "OrderUnit": { "enum": ["each", "pack"] },
+    "PurchaseState": { "enum": ["ordered", "arrived", "cancelled"] },
+    "RestockState": { "enum": ["received", "in_transit", "completed", "cancelled"] },
+    "LedgerBy": {
+      "doc": "`taken` (default) is the sale time; `updated` catches orders that settled, were revised or refunded after they were taken. Answer { ok: false, reason: \"unsupported\" } if you cannot filter on it — the caller falls back to `taken` rather than silently losing rows.",
+      "enum": ["taken", "updated"]
+    },
+
+    "MachineItem": {
+      "doc": "GET /inventory?locationId= → { ok, items }",
+      "fields": {
+        "vendorSku": { "type": "string" },
+        "title": { "type": "string" },
+        "barcode": { "type": "string", "optional": true, "doc": "EAN-13. Strongly recommended: it is the only automatic bridge between what is in a machine and what a supplier sells." },
+        "priceFen": { "type": "number" },
+        "stock": { "type": "number" },
+        "imageUrl": { "type": "string", "optional": true },
+        "slotId": { "type": "string", "optional": true, "doc": "Position inside the machine. Without it the caller keys slots by `<locationId>-<vendorSku>`, which only works when a product sits in one place." }
+      }
+    },
+    "LedgerLine": {
+      "fields": {
+        "vendorSku": { "type": "string" },
+        "priceFen": { "type": "number" },
+        "costFen": { "type": "number", "nullable": true, "doc": "A real unit cost, when the vendor reports one that differs from the sale price. `null` otherwise — including when the vendor echoes the sale price back as \"cost\", which is not a cost." },
+        "status": { "type": "LedgerLineStatus" }
+      }
+    },
+    "LedgerRecord": {
+      "fields": {
+        "orderNo": { "type": "string" },
+        "status": { "type": "string", "doc": "The vendor's raw status, kept for diagnostics." },
+        "statusLabel": { "type": "string", "optional": true },
+        "state": { "type": "TradeState", "optional": true },
+        "locationId": { "type": "string" },
+        "locationName": { "type": "string", "optional": true },
+        "totalFen": { "type": "number" },
+        "createdAt": { "type": "number", "nullable": true },
+        "createdAtRaw": { "type": "string" },
+        "takenAt": { "type": "number", "nullable": true, "optional": true, "doc": "When the goods left the machine; demand is measured on this." },
+        "settledAt": { "type": "number", "nullable": true, "optional": true, "doc": "When payment succeeded; revenue is booked on this." },
+        "updatedAt": { "type": "number", "nullable": true, "optional": true, "doc": "Last change to the order; the only reliable polling axis for late-settling orders. Pair it with support for `by=updated`." },
+        "finalized": { "type": "boolean", "optional": true, "doc": "True once nothing about the order can change any more." },
+        "lines": { "type": "LedgerLine", "list": true }
+      }
+    },
+    "LedgerPage": {
+      "doc": "GET /ledger?fromMs&toMs&page&size&settledOnly&by → { ok, records, page, pages, total }",
+      "fields": {
+        "records": { "type": "LedgerRecord", "list": true },
+        "page": { "type": "number" },
+        "pages": { "type": "number" },
+        "total": { "type": "number" }
+      }
+    },
+    "LedgerQuery": {
+      "fields": {
+        "fromMs": { "type": "number" },
+        "toMs": { "type": "number" },
+        "page": { "type": "number", "optional": true },
+        "size": { "type": "number", "optional": true },
+        "settledOnly": { "type": "boolean", "optional": true },
+        "by": { "type": "LedgerBy", "optional": true }
+      }
+    },
+    "RestockLine": {
+      "fields": {
+        "vendorSku": { "type": "string" },
+        "quantity": { "type": "number" },
+        "reason": { "type": "string", "optional": true }
+      }
+    },
+    "RestockDelivered": {
+      "fields": {
+        "vendorSku": { "type": "string" },
+        "quantity": { "type": "number" }
+      }
+    },
+    "RestockStatus": {
+      "doc": "GET /restock/{ref} → { ok, state, delivered, completedAt, rawStatus }",
+      "fields": {
+        "state": { "type": "RestockState" },
+        "delivered": { "type": "RestockDelivered", "list": true, "doc": "What was actually loaded; feeds the caller's receive step." },
+        "completedAt": { "type": "number", "nullable": true },
+        "rawStatus": { "type": "number | string" }
+      }
+    },
+    "SupplyProduct": {
+      "doc": "GET /catalog?keyword= → { ok, products, sites }",
+      "fields": {
+        "vendorSku": { "type": "string" },
+        "title": { "type": "string" },
+        "spec": { "type": "string", "optional": true },
+        "category": { "type": "string", "optional": true },
+        "imageUrl": { "type": "string", "optional": true },
+        "packSize": { "type": "number", "doc": "Units of `each` in one pack (箱规). 1 when sold by the piece only." },
+        "packPriceFen": { "type": "number" },
+        "eachPriceFen": { "type": "number" },
+        "eachPriceDerived": { "type": "boolean", "doc": "True when the each price was computed from the pack price rather than quoted by the vendor. The caller says 换算价 when it is." },
+        "stock": { "type": "number" }
+      }
+    },
+    "SupplySite": {
+      "fields": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "optional": true },
+        "address": { "type": "string", "optional": true }
+      }
+    },
+    "SupplyCatalog": {
+      "fields": {
+        "products": { "type": "SupplyProduct", "list": true },
+        "sites": { "type": "SupplySite", "list": true }
+      }
+    },
+    "OrderLine": {
+      "fields": {
+        "vendorSku": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "OrderUnit" }
+      }
+    },
+    "PurchaseStatus": {
+      "doc": "GET /orders/{ref} → { ok, state, description, rawStatus, logistics }",
+      "fields": {
+        "state": { "type": "PurchaseState" },
+        "description": { "type": "string" },
+        "rawStatus": { "type": "number | string" },
+        "logistics": { "type": "unknown", "list": true }
+      }
+    }
+  },
+  "unions": {
+    "FulfillmentRequest": {
+      "doc": "How the goods reach their destination. `restock` means the supplier loads them into the machine itself, so the destination is a machine id rather than an address.",
+      "variants": [
+        { "method": "shipping", "fields": { "contactName": "string", "contactPhone": "string", "address": "string" } },
+        { "method": "pickup", "fields": { "pickupAt": "string", "siteId?": "string" } },
+        { "method": "restock", "fields": { "locationId": "string" } }
+      ]
+    }
+  }
+}
