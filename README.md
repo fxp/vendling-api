@@ -45,8 +45,16 @@ two offline skills on purpose, so it fails the build when they disagree — endp
 set, operation counts, removed routes, vendor-name leaks, the A.6 contract, index coverage, section
 cross-references and partner badges.
 
-CI (`.github/workflows/deploy.yml`) does the same on every push to `main`, using the
+`.github/workflows/deploy.yml` does the same on every push to `main` before publishing, using the
 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+`.github/workflows/ci.yml` runs them on pull requests, where until 2026-09-16 there was no signal
+at all — a broken spec was first noticed on vendling.dev.
+
+CI also checks the one thing the deploy does not: that `contracts/adapter-a6.json` still
+*generates*. The copies it generates into live in vendling-core and in each adapter, and `--check`
+guards them from **their** suites, because those repos are private and this one is public. Without
+a check on this side, a contract edit the generator cannot load turns three other repos red and
+none of them is the one that changed.
 
 `python3 scripts/build.py --mirror --out DIR` builds the API pages with relative links for a
 mirror under another host (the copy at `xiaopingfeng.com/apps/vendling/api/`).
