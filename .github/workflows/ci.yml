@@ -1,0 +1,42 @@
+# The checks, on pull requests.
+#
+# They already ran on push to main — deploy.yml runs redocly and
+# check_docs.py before it publishes, and that stays the gate on the
+# deploy. What was missing was the other half: a PR here got no signal at
+# all, so the first time anyone learned a change broke the spec was when
+# it was already on vendling.dev.
+#
+# Deliberately `pull_request` only, so the two workflows do not run the
+# same checks twice on every push to main.
+name: CI
+on:
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm }
+      - run: npm ci
+      - run: npx redocly lint openapi/vendling-commerce.openapi.yaml
+      - run: python3 scripts/check_docs.py
+      # The contract this repo is the source of, checked here for the one
+      # thing this repo can check about it.
+      #
+      # contracts/adapter-a6.json generates wire types into vendling-core
+      # and into every adapter, and `--check` guards those copies — but it
+      # runs in THEIR test suites, because they are private and this repo
+      # is public, so nothing here can reach them. What this side can prove
+      # is that the contract still generates: a JSON edit that the
+      # generator cannot load, or that makes it non-deterministic, becomes
+      # three red repos otherwise, none of them the one that changed.
+      - run: |
+          python3 scripts/gen_adapter_types.py --write /tmp/wire.ts
+          python3 scripts/gen_adapter_types.py --check --write /tmp/wire.ts
+      # build.py is what deploy.yml publishes; a PR that breaks it should
+      # say so here rather than at deploy time.
+      - run: pip install markdown
+      - run: python3 scripts/build.py
