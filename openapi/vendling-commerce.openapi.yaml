@@ -12,7 +12,7 @@ info:
 
     Operations badged **核心** are the minimum set a route needs day to day (discovery, namespaces,
     locations, catalog, sales ledger, sync, replenishment plan, checkout create + complete, prices,
-    approvals, events) — 13 of the 32 operations. Everything else is a convenience; see the guide §2.1.
+    approvals, events) — 13 of the 33 operations. Everything else is a convenience; see the guide §2.1.
 
     v2 (2026-09-10) removed the redundant `catalog/product`, `locations/lookup` and `skus/resolve`,
     renamed restock recommendations to `POST /locations/{id}/restock` with a `binding` flag, and added the
@@ -386,7 +386,9 @@ paths:
                   description: Must be JSON `true`. Strings and numbers are rejected with `confirmation_required`.
       responses:
         "200":
-          description: Applied, or `approval_required` when a move exceeds `priceCapPerItem`
+          description: >-
+            Applied. A move exceeding `priceCapPerItem` is applied too (2026-09-16: this no
+            longer blocks) — a `over_cap` warning rides in `messages[]` instead.
           content:
             application/json:
               schema:
@@ -400,7 +402,6 @@ paths:
                       type: object
                       properties:
                         item: { $ref: "#/components/schemas/ItemRef" }
-                        previous: { $ref: "#/components/schemas/Price" }
                         price: { $ref: "#/components/schemas/Price" }
                   messages: { $ref: "#/components/schemas/Messages" }
                   actions: { $ref: "#/components/schemas/Actions" }
@@ -553,7 +554,10 @@ paths:
             schema: { $ref: "#/components/schemas/CheckoutCreateRequest" }
       responses:
         "201":
-          description: Session created (status usually `incomplete` or `requires_escalation`)
+          description: >-
+            Session created (status usually `incomplete` or `ready_for_complete` — an
+            over-budget/probation estimate no longer produces `requires_escalation`
+            automatically as of 2026-09-16, see `Checkout.status`)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Checkout" }
@@ -626,7 +630,7 @@ paths:
                 confirm: { type: boolean, description: Must be JSON `true`. }
       responses:
         "200":
-          description: "Session with `status: completed` and `order`, or the unchanged session plus a message (`kill_switch_engaged`, `supplier_rejected`, `approval_required`)"
+          description: "Session with `status: completed` and `order`, or the unchanged session plus a message (`kill_switch_engaged`, `supplier_rejected`, `hard_no_go`)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Checkout" }
@@ -955,6 +959,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Event" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /events/stream:
+    get:
+      tags: [events]
+      operationId: getEventStream
+      summary: Where to connect for real-time events (this is not the stream itself)
+      description: >-
+        Real-time delivery is a WebSocket, not this endpoint — GET here to discover its URL.
+        Connect to `websocket_url` with the same bearer token or session cookie; messages
+        arrive as `history` (recent decisions) and `event-history` (recent events) on
+        connect, then `event`, `decision`, and `decision-updated` as they happen.
+      responses:
+        "200":
+          description: The WebSocket URL to connect to, plus a `use_websocket` warning message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ucp: { $ref: "#/components/schemas/UcpEnvelope" }
+                  websocket_url: { type: string, format: uri }
+                  messages: { $ref: "#/components/schemas/Messages" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
 components:

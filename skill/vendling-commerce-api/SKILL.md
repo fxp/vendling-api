@@ -29,7 +29,7 @@ Machine-readable index: https://vendling.dev/api/llms.txt.
 | Staging (mock data, no supplier credentials — nothing can spend money) | `https://vendling-core-staging.fxp007.workers.dev/ucp/v1` |
 | Reference | https://vendling.dev/api/reference |
 
-**Core set — wire these first (13 of 32 operations, badged 核心 in the reference):**
+**Core set — wire these first (13 of 33 operations, badged 核心 in the reference):**
 `GET /.well-known/ucp` · `GET /namespaces` · `POST /locations/search` · `POST /catalog/search` ·
 `GET /orders?kind=sale` · `POST /locations/sync` · `GET /replenishment/plan` ·
 `POST /checkout-sessions` + `POST …/complete` · `PUT /locations/{id}/prices` ·
@@ -79,7 +79,11 @@ with HTTP 403 error 1010 — send a descriptive UA; that 403 is not an auth fail
    string `"true"` is rejected). Only send it when the user has explicitly asked, in this
    conversation, for *that* order or *that* price. Show them the payload first.
 2. `approval_required` means an owner must approve (in their chat tool or via
-   `POST /approvals/{id}`); do not approve on your own initiative.
+   `POST /approvals/{id}`); do not approve on your own initiative. As of 2026-09-16 this is no
+   longer the automatic result of checkout going over `spendingLimitPerRun` or a price move
+   going over `priceCapPerItem` — those execute immediately with an `over_budget`/`over_cap`
+   warning in `messages[]` instead (see §7.3/§9 of the spec). `approval_required` can still
+   appear for `POST /replenishment/runs/{id}/place` when a decision was flagged for review.
 3. `kill_switch_engaged` (409) freezes every write. Don't retry in a loop; report it.
 4. Read-only calls are always fine, including under the kill switch.
 
@@ -142,7 +146,7 @@ curl -s -X POST -H "$H" -H "$J" $U/checkout-sessions -d '{
   "line_items": [{"item":{"id":"acme-supply:10023"},"quantity":2,"quantity_unit":{"unit":"BX"}},
                  {"item":{"id":"acme-supply:10088"},"quantity":6}],
   "fulfillment": {"methods":[{"type":"shipping","destinations":[{"street_address":"…","first_name":"张三","phone_number":"138…"}]}]}}'
-# status: incomplete (fix messages[]) | requires_escalation (owner approval) | ready_for_complete
+# status: incomplete (fix messages[]) | ready_for_complete (over-budget just adds an over_budget warning, doesn't block)
 curl -s -X POST -H "$H" -H "$J" $U/checkout-sessions/po_20260909_001/complete -d '{"confirm":true}'
 # completed → order{id,label,permalink_url}; 502 supplier_rejected leaves it ready to retry
 ```
@@ -150,7 +154,7 @@ curl -s -X POST -H "$H" -H "$J" $U/checkout-sessions/po_20260909_001/complete -d
 **Change a live price** (customer-facing!) — same confirmation discipline
 ```bash
 curl -s -X PUT -H "$H" -H "$J" $U/locations/12345678/prices -d '{"prices":[{"item":{"id":"acme-machine:8837"},"price":{"amount":650,"currency":"CNY"}}],"confirm":true}'
-# over the price cap → approval_required (nothing changed yet); approved → executed
+# over the price cap → applies anyway, adds an over_cap warning (no longer blocks as of 2026-09-16)
 ```
 
 **Approvals and events**

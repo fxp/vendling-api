@@ -30,7 +30,11 @@ C_SKILL = ROOT / "skill" / "vendling-commerce-api"
 V_SKILL = ROOT / "skill" / "vendling-vendor-adapter"
 
 PUBLISHED = [SPEC, OPENAPI, README, ROOT / "agent-setup" / "prompt.md", *sorted(C_SKILL.rglob("*.md")), *sorted(C_SKILL.rglob("*.py")), *sorted(V_SKILL.rglob("*.md")), *sorted(V_SKILL.rglob("*.py"))]
-VENDOR_NAMES = re.compile(r"友宝|youbao|ubox|元气森林|yuanqi", re.I)
+# 2026-09-18: only covered youbao/ubox — zhipu/mujia/weimi integrations were
+# already in progress (vendling-adapters/vendor/mujia, docs/architecture.md)
+# and none of their names were in this list, so this gate would not have
+# caught a leak of any of them.
+VENDOR_NAMES = re.compile(r"友宝|youbao|ubox|元气森林|yuanqi|牧家|mujia|微米|weimi", re.I)
 REMOVED_ROUTES = ["POST /catalog/product", "POST /locations/lookup", "POST /skus/resolve", "/restock-recommendations"]
 
 problems: list[str] = []

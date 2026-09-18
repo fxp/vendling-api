@@ -17,14 +17,16 @@ errors use HTTP status codes. Always read `messages[]` before the data.
 | `hard_no_go` | unrecoverable | 200 | a line matches `rules.hardNoGos`; session stays `incomplete` |
 | `approval_rejected` / `expired` | unrecoverable | 200 | session became `canceled` |
 | `confirmation_required` | requires_buyer_review | 400 | `confirm` not boolean `true` |
-| `approval_required` | requires_buyer_review | 200 | guardrail created a pending decision; `actions["com.xiaopingfeng.vendling.approval"][].id` |
+| `approval_required` | requires_buyer_review | 200 | a decision was flagged for review (`actions["com.xiaopingfeng.vendling.approval"][].id`) — as of 2026-09-16 this is not the automatic result of checkout/pricing crossing a budget or price cap (see `over_budget`/`over_cap` below); it still applies to `POST /replenishment/runs/{id}/place` when the run's decision was flagged |
 | `kill_switch_engaged` | requires_buyer_review | 409 | |
 | `guard_unverifiable` | unrecoverable | 503 | rules unreadable → refuse |
 | `supplier_rejected` / `upstream_unreachable` | unrecoverable | 502 | upstream said no; `content` has its message |
 | `already_placed` / `already_delivered` / `simulation_disabled` | unrecoverable | 409 | |
 
 Warnings (`type: "warning"`, non-blocking): `price_estimated` (each price derived from the box
-price), `location_unverified` (machine id never seen in the ledger — may be a typo),
+price), `over_budget` (checkout total exceeded `spendingLimitPerRun` — placed anyway, logged for
+review), `over_cap` (price move exceeded `priceCapPerItem` — applied anyway, logged for review),
+`location_unverified` (machine id never seen in the ledger — may be a typo),
 `history_truncated` (ledger paging hit the cap), `hours_unknown`, `sync_problem`, `same_namespace`.
 
 Not the API: `403` with Cloudflare error 1010 means `*.workers.dev` rejected the default

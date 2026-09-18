@@ -22,7 +22,7 @@
 
 ### 0.1 按端点
 
-全部 32 个操作。★ 是 §2.1 的最小接入集。
+全部 33 个操作。★ 是 §2.1 的最小接入集。
 
 | ★ | 端点 | 章节 | 是什么 |
 |---|---|---|---|
@@ -57,6 +57,7 @@
 |  | `GET /approvals/{id}` | §11 | 一条决策 |
 | ★ | `POST /approvals/{id}` | §11 | 批准或驳回；批准改价即执行 |
 | ★ | `GET /events` | §12 | 事件流（最新在前），响应带 `websocket_url` |
+|  | `GET /events/stream` | §12 | 只要连接地址，不拉历史 |
 |  | `POST /events` | §12 | 其他 Agent 写入事件；不去重 |
 
 ### 0.2 按概念（以这一节为准）
@@ -107,7 +108,7 @@
 | 目录 → 结账 → 订单 | 目录返回的 `variants[].id` 直接作为结账的 `line_items[].item.id` | 同上，且这个 ID 在所有接口里都是同一个 `sku_id`（§3.6） |
 | 履约 | `dev.ucp.shopping.fulfillment`：`methods[]` 的 `shipping` / `pickup` | 供货方配送或自提；自提时段做成可选的 `options[]` |
 | 销售单位 | `quantity_unit`（sale basis），缺省 `each` | 同一 SKU 可按个（`EA`，缺省）或按箱（`BX`）下单，箱规在 `sale_units[]` 里公布 |
-| 人工介入 | `status: requires_escalation` + `continue_url`，`severity: requires_buyer_review` | 花钱 / 改价的人工审批用这一套表达，审批本身是扩展 §11 |
+| 人工介入 | `status: requires_escalation` + `continue_url`，`severity: requires_buyer_review` | 表达方式还在，但**自动触发它的两个阈值（结账超预算、改价超上限）2026-09-16 起改成不拦截**——超限的结账/改价照常执行，只在 `messages[]` 里带一条 warning、写一条日志决策；人工审批仍然存在，但现在只由系统自己主动发起（一次真正的"我拿不准，问问人"），不再由某个数字越界自动触发，见 §7.3 / §9 / §11 |
 
 UCP 明确允许的扩展点，本规范都只用这些：`metadata` 对象、自定义 `fulfillment.methods[].type`、开放的
 `fulfillment.events[].type` / `adjustments[].type`、自由的 `messages[].code`、`actions` 映射、
@@ -150,7 +151,7 @@ UCP 只定义两个角色：**Platform**（消费能力的一方）和 **Busines
 其余接口按需再接。会花真钱、改真价的只有两个（§7 结账 `complete`、§9 改价），都要 `confirm: true`。
 Agent 直接用 [一键接入](#agent-setup) 那句话，五步会自动跑完。
 
-本规范一共 32 个操作，一条线路日常运转只依赖其中 13 个。它们要么是 Vendling 自己的定时循环每天在调的能力，
+本规范一共 33 个操作，一条线路日常运转只依赖其中 13 个。它们要么是 Vendling 自己的定时循环每天在调的能力，
 要么是仅有的两个会动真钱、改真价的动作。先接这些；其余的（批量 Lookup、别名注册表、结账会话的查改撤、采购单状态、
 行程的列取下单收货、预测评分、补货请求、实时读货道……）按需再接。API Reference 里这 13 个操作带 **核心** 徽标。
 关键场景的时序图见附录 C。
@@ -718,7 +719,7 @@ Idempotency-Key: po_20260909_001
   "ucp": { "version": "2026-08-25", "status": "success",
            "payment_handlers": { "com.xiaopingfeng.vendling.on_account": [{ "id": "supplier_account", "version": "2026-09-10" }] } },
   "id": "po_20260909_001",
-  "status": "requires_escalation",
+  "status": "ready_for_complete",
   "currency": "CNY",
   "vendor": "acme-supply",
   "line_items": [
@@ -735,11 +736,9 @@ Idempotency-Key: po_20260909_001
   "payment": { "instruments": [{ "id": "instr_account", "handler_id": "supplier_account", "type": "on_account", "selected": true, "display": { "account": "on file" } }] },
   "messages": [
     { "type": "warning", "code": "price_estimated", "path": "$.line_items[1]", "content": "单价由箱价换算，实际以供货方对账为准" },
-    { "type": "error", "code": "approval_required", "severity": "requires_buyer_review", "path": "$", "content": "estimated cost 142.80 exceeds run budget 100.00 — needs owner approval" }
+    { "type": "warning", "code": "over_budget", "path": "$", "content": "estimated cost 142.80 exceeds run budget 100.00 — placing anyway; logged for review" }
   ],
-  "actions": { "com.xiaopingfeng.vendling.approval": [{ "id": "dec-1757400000000-3" }] },
   "links": [{ "type": "documentation", "url": "https://vendling.dev/api/" }],
-  "continue_url": "https://vendling.sh/tasks",
   "expires_at": "2026-09-10T14:03:00+08:00"
 }
 ```
@@ -747,14 +746,15 @@ Idempotency-Key: po_20260909_001
 - `item.price` 是**所选单位**一件的价格（箱行是箱价，个行是单价），行 `totals` = `price × quantity`。
 - 服务端回显 `item.quantity_unit`（UCP 要求非 `each` 的行必须带），并补上 `display_text` / `contains`。
 - 按个下单的行会附 `price_estimated` 警告（供货方只公布箱价时，单价是换算的）。
+- 超预算的行会附 `over_budget` 警告——**2026-09-16 起这不再拦截**：状态照样是 `ready_for_complete`，`complete` 会照常执行，只是多一条 warning 和一条写进决策日志、留给 CEO Agent 日常复核的记录（§13）。
 
 ### 7.3 状态机
 
 | `status` | 含义 | 进入条件 | 出去 |
 |---|---|---|---|
 | `incomplete` | 信息不全 | 缺联系人 / 地址 / 自提时段；某行命中 `hardNoGos`（`hard_no_go`，永远过不去） | `PUT` 补齐 |
-| `requires_escalation` | 要人批 | 预估金额 > `rules.spendingLimitPerRun`，或处于试用期 `probationUntil` | 运营者在 `continue_url` 或 §11 审批；批准 → `ready_for_complete`，驳回 → `canceled` |
-| `ready_for_complete` | 可以提交 | 信息齐、护栏过（或已批） | `POST …/complete` |
+| `requires_escalation` | 要人批 | **2026-09-16 起结账不会自动进到这个状态**——预估金额超 `rules.spendingLimitPerRun`、或处于试用期 `probationUntil`，现在只落一条 `over_budget` warning，直接给 `ready_for_complete`。这个状态还在类型里、还会出现，只是触发源变了：系统自己主动调用 approval 工具（一次真正不确定要不要办的判断），不再是某个数字越界自动触发 | 运营者 §11 审批；批准 → `ready_for_complete`，驳回 → `canceled` |
+| `ready_for_complete` | 可以提交 | 信息齐、护栏过（含超预算但已放行的情况——见上，`messages[]` 里能看到 `over_budget`） | `POST …/complete` |
 | `complete_in_progress` | 已提交，等供货方 | 上游请求已发出、未回 | 由服务端推进 |
 | `completed` | 已下单 | 供货方接单，返回订单号 | 终态；`order` 字段出现 |
 | `canceled` | 作废 | 主动取消、审批驳回、`expires_at` 过期（24 小时） | 终态 |
@@ -944,7 +944,7 @@ PUT /locations/12345678/prices
 2. `price.amount` 正整数（分），`currency` 必须是 `CNY`。
 3. `confirm` 必须是布尔 `true`（同 §7.4）。
 4. 紧急停机时 `409 kill_switch_engaged`。
-5. **价格上限护栏**：以机器上此刻的现价为基准，`|new − current| > rules.priceCapPerItem` 时**不执行**，返回 `200 approval_required` 并生成待审批决策（`kind: price_change`）。批准即执行（§11）；或批准后重发同一请求也会执行。
+5. **价格上限护栏**：以机器上此刻的现价为基准检查 `|new − current| > rules.priceCapPerItem`。**2026-09-16 起超限不再拦截**——照常执行改价，响应里带一条 `over_cap` warning（`type: "warning"`，不是 error），并写一条 `kind: price_change` 的决策日志留给日常复核，不产生待审批项。§11 的审批机制还在，但现在只服务于系统自己主动发起的审批，不再由价格上限这个阈值自动触发。
 6. 无论成败写事件。
 
 ---
@@ -1073,6 +1073,7 @@ PUT /locations/12345678/prices
 | 操作 | 方法 | 端点 | 说明 |
 |---|---|---|---|
 | 读历史 | `GET` | `/events?limit=50&location=&kind=` | 最新在前；响应带 `websocket_url` |
+| 只要连接地址 | `GET` | `/events/stream` | 不想先拉一页历史时单独要 `websocket_url`；跟上一行返回的是同一个地址 |
 | 写事件 | `POST` | `/events` `{kind, summary, reasoning, location?}` | 其他 Agent 的接入点；**不去重** |
 | 实时流 | `WebSocket` | `websocket_url` | 连上先发 `event-history`（最近 50），之后每条 `event` |
 | 订单 Webhook（UCP 标准） | `POST` | 平台在自己档案里给的 `webhook_url` | **[缺]** |
@@ -1094,14 +1095,15 @@ PUT /locations/12345678/prices
 
 | 操作 | `confirm: true` | 紧急停机 | 规则护栏 | 审批 | 记录 |
 |---|---|---|---|---|---|
-| §7 采购下单 complete | 必需 | 拒 | `spendingLimitPerRun`、`hardNoGos`、试用期 | `requires_escalation` | 事件 |
-| §9 改价 | 必需 | 拒 | `priceCapPerItem` | `approval_required` | 事件 |
-| §10.2 行程下单 place | — | 拒 | 同采购 | 决策必须已批 | 决策 + 事件 |
+| §7 采购下单 complete | 必需 | 拒 | `spendingLimitPerRun`、`hardNoGos`、试用期 | 超预算不再拦截，2026-09-16 起只警告+记录 | 事件 |
+| §9 改价 | 必需 | 拒 | `priceCapPerItem` | 超上限不再拦截，2026-09-16 起只警告+记录 | 事件 |
+| §10.2 行程下单 place | — | 拒 | 同采购 | 决策若真的 `requiresApproval: true` 仍会拦（见下）；但补货预算超限本身 2026-09-16 起不再自动置位这个字段 | 决策 + 事件 |
 | §10.3 补货请求 `binding: false` | — | 拒 | — | — | — |
-| §10.3 补货请求 `binding: true`（或行程 place 路由到平台） | — | 拒 | 平台计价时同采购 | 决策必须已批 | 决策 + 事件 |
+| §10.3 补货请求 `binding: true`（或行程 place 路由到平台） | — | 拒 | 平台计价时同采购 | 同上 | 决策 + 事件 |
 | §6 名册增删 / 同步 | — | 不受影响 | — | — | 事件 |
 | 读操作 | — | **不受影响** | — | — | — |
 
+- **2026-09-16**：四个阈值型护栏（结账超预算、改价超上限、货道锁定、硬性黑名单）不再自动把 `requiresApproval` 置成 `true`——越界的写照常执行，`messages[]` 带一条 warning，决策日志记一笔。`requiresApproval: true` 还会出现，但现在只来自系统自己主动调用的审批工具（一次真正拿不准的判断），不是某个数字越界的自动结果；那种情况下 §10.2/§10.3 的"决策必须已批"仍然成立。
 - 护栏**失败关闭**：读不到规则就拒绝（`503 guard_unverifiable`）。
 - 模拟数据与真实数据不混：模拟购买默认关闭；平板模拟器的遥测标 `simulated = 1`。
 - 顾客侧（扫码聊天界面）不在本规范内：它跑在另一个没有任何上游凭证的进程里，只能通过固定白名单的桥接读库存、写意图事件。
@@ -1303,7 +1305,6 @@ sequenceDiagram
   autonumber
   participant A as Agent
   participant V as Vendling
-  participant O as 店主（群聊审批）
   participant S as 供货适配器 (acme-supply)
   participant W as 供货方
   A->>V: POST /catalog/search {namespace: acme-supply, query}
@@ -1311,15 +1312,9 @@ sequenceDiagram
   A->>V: GET /skus/{机器 sku}
   V-->>A: 可采购 sku_id（仅 barcode / manual 别名）
   A->>V: POST /checkout-sessions {line_items, fulfillment}
-  V->>V: 读 rules（读不到则 503）、hardNoGos、spendingLimitPerRun、试用期
-  alt 超预算或试用期
-    V-->>A: requires_escalation，生成审批决策
-    V->>O: 审批卡片
-    O->>V: POST /approvals/{id} {approved: true}
-    V-->>A: ready_for_complete
-  else 通过
-    V-->>A: ready_for_complete
-  end
+  V->>V: 读 rules（读不到则 503）、hardNoGos（命中则 incomplete，唯一还会拦下这一步的检查）
+  Note over V: 2026-09-16 起 spendingLimitPerRun/试用期超限不再拦截——加一条 over_budget warning，写一条决策日志
+  V-->>A: ready_for_complete
   A->>V: POST /checkout-sessions/{id}/complete {confirm: true}
   V->>V: 紧急停机则 409
   V->>S: createOrder(ref, lines, fulfillment)
@@ -1340,26 +1335,17 @@ sequenceDiagram
   autonumber
   participant A as Agent
   participant V as Vendling
-  participant O as 店主
   participant M as 机器适配器
   participant P as 机器平台
   A->>V: PUT /locations/{id}/prices {prices, confirm: true}
   V->>V: 校验 machine 命名空间、confirm 为布尔、紧急停机
   V->>M: inventory(locationId) 取现价
   V->>V: 新价与现价之差对比 priceCapPerItem
-  alt 超过上限
-    V-->>A: 200 approval_required（未执行）
-    V->>O: price_change 审批卡片
-    O->>V: POST /approvals/{id} {approved: true}
-    V->>M: updatePrices(locationId, lines)
-    M->>P: 真实改价
-    V->>V: 写事件
-  else 在上限内
-    V->>M: updatePrices(locationId, lines)
-    M->>P: 真实改价
-    V-->>A: updated[]
-    V->>V: 写事件
-  end
+  Note over V: 2026-09-16 起超上限不再拦截——加一条 over_cap warning，写一条 price_change 决策日志
+  V->>M: updatePrices(locationId, lines)
+  M->>P: 真实改价
+  V-->>A: updated[]（超限时 messages[] 带 over_cap）
+  V->>V: 写事件
 ```
 
 ### C.5 补货闭环

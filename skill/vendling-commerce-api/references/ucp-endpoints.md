@@ -19,7 +19,7 @@ Namespaces are `<vendor>-supply` / `<vendor>-machine`; the docs use the placehol
 | `dev.ucp.shopping.checkout` + fulfillment | `POST /checkout-sessions` → `GET/PUT /checkout-sessions/{id}` → `POST …/complete {confirm:true}` · `POST …/cancel` | supply namespace only, one vendor per session; budget/probation/hard-no-go guards |
 | `dev.ucp.shopping.order` | `GET /orders/{id}` · `GET /orders?kind=sale\|purchase&location=&from=&to=&trade_status=settled\|all\|<state>&updated_from=&updated_to=&cursor=&limit=` | sale ids are ledger numbers; purchase ids are PO ids. `from/to` filter on `taken_at`; `updated_from/to` on `updated_at` (poll with these for smart cabinets — [缺] today; `trade_status=<state>` does work) |
 | `com.xiaopingfeng.vendling.inventory` | `GET /locations/{id}/inventory` | the machine's shelves read **live from the platform**, with current price and units left. Different source from `POST /catalog/search` + `location`, which answers from the operator's synced copy — when they disagree, something sold, jammed or was restocked since the last sync. Read-only; no confirm, no kill switch |
-| `com.xiaopingfeng.vendling.pricing` | `PUT /locations/{id}/prices {prices:[{item:{id}, price:{amount,currency}}], confirm:true}` | machine namespace; price cap → `approval_required` |
+| `com.xiaopingfeng.vendling.pricing` | `PUT /locations/{id}/prices {prices:[{item:{id}, price:{amount,currency}}], confirm:true}` | machine namespace; over the price cap applies anyway with an `over_cap` warning (no longer blocks, 2026-09-16) |
 | `com.xiaopingfeng.vendling.replenishment` | `GET /replenishment/plan` · `GET/POST /replenishment/runs` · `GET /replenishment/runs/{id}` · `POST …/place` · `POST …/receive {delivered:[{slot_id, quantity}]}` · `GET /replenishment/score?horizon_days=` · `POST /locations/{id}/restock {reference, binding?, line_items:[{item:{id}, quantity, reason?}]}` (binding false = hint, true = order the platform executes; `external_ref` back) | `place` routes by `fulfiller`: a supply checkout, the machine platform's own restock order (namespace declares `replenishment.order`), or the simulated supplier — only the last exists today |
 | `com.xiaopingfeng.vendling.approval` | `GET /approvals?status=pending\|approved\|rejected\|all&kind=` · `GET /approvals/{id}` · `POST /approvals/{id} {approved, resolver?}` | approving a parked price change executes it |
 | `com.xiaopingfeng.vendling.events` | `GET /events?limit=&location=&kind=` · `POST /events {kind, summary, reasoning, location?}` · WebSocket at `websocket_url` | no dedup on POST |
@@ -38,8 +38,8 @@ The route runs day to day on these 13 operations; wire them first and treat the 
 | ★ | `POST /locations/sync` | pulls inventory + ledger into route state; the plan is built from it | dashboard "sync" and the hourly task |
 | ★ | `GET /replenishment/plan` | per-slot demand, days of cover, recommended action | daily 07:00 curate + restock loop |
 | ★ | `POST /checkout-sessions` → `POST …/complete` | the only path that spends real money at a supplier | operator/agent initiated; loops never order on their own |
-| ★ | `PUT /locations/{id}/prices` | the only path that changes a live price | operator/agent initiated; over the cap → approval |
-| ★ | `GET /approvals` · `POST /approvals/{id}` | human in the loop for over-budget / over-cap actions | chat approval cards, dashboard |
+| ★ | `PUT /locations/{id}/prices` | the only path that changes a live price | operator/agent initiated; over the cap applies anyway with a warning, doesn't block |
+| ★ | `GET /approvals` · `POST /approvals/{id}` | human in the loop for decisions the system itself flagged for review — no longer for over-budget/over-cap, which apply automatically now | chat approval cards, dashboard |
 | ★ | `GET /events` | audit line: every decision, sale, error | dashboard live feed, weekly letter |
 
 ## Partner view
@@ -56,9 +56,9 @@ into its methods.
 
 ## Checkout status machine
 
-`incomplete` → `requires_escalation` (owner approval: over budget, probation) → `ready_for_complete` →
-`complete_in_progress` → `completed` (has `order`) | `canceled`. Kill switch is not a state: `complete`
-is rejected with `kill_switch_engaged`, the session stays as it was.
+`incomplete` → `ready_for_complete` (over budget/probation just adds an `over_budget` warning as of
+2026-09-16, doesn't block) → `complete_in_progress` → `completed` (has `order`) | `canceled`. Kill
+switch is not a state: `complete` is rejected with `kill_switch_engaged`, the session stays as it was.
 
 ## Order shape (purchase and sale)
 
