@@ -27,5 +27,31 @@
     { "pattern": "vendling.dev", "custom_domain": true },
     { "pattern": "www.vendling.dev", "custom_domain": true }
   ],
-  "workers_dev": false
+  "workers_dev": false,
+
+  // ── Staging ─────────────────────────────────────────────────────────────
+  // Added 2026-09-18 so a docs change can be previewed before it's the
+  // real vendling.dev — this site is stateless (a build of spec/ +
+  // openapi/), so there's no data-isolation argument the way there is for
+  // vendling-core/-face, just "look at it before it's live". Deployed in
+  // parallel with production on every push to main (see deploy-staging.yml)
+  // rather than gating it — production here has always been "merge = live"
+  // and this doesn't change that, it just adds a same-commit mirror to
+  // check first if you want to.
+  //
+  // `assets` is repeated rather than inherited on purpose — wrangler does
+  // not inherit vars, durable_objects, ai, assets, or routes into a named
+  // environment.
+  "env": {
+    "staging": {
+      "name": "vendling-docs-staging",
+      "workers_dev": true,
+      "routes": [],
+      "assets": {
+        "directory": "./dist",
+        "html_handling": "auto-trailing-slash",
+        "not_found_handling": "404-page"
+      }
+    }
+  }
 }

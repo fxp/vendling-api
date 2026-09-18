@@ -1,0 +1,28 @@
+# Same build/checks as deploy.yml, deployed to vendling-docs-staging
+# instead — added 2026-09-18 so a docs change has a URL to look at before
+# it's the real vendling.dev. Runs in parallel with deploy.yml on the same
+# push; it doesn't gate production, it's a same-commit mirror to check
+# first if you want to.
+name: deploy-staging
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install markdown
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm }
+      - run: npm ci
+      - run: npx redocly lint openapi/vendling-commerce.openapi.yaml
+      - run: python3 scripts/check_docs.py
+      - run: python3 scripts/build.py
+      - run: npx wrangler deploy --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
