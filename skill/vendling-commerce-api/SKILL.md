@@ -44,6 +44,16 @@ Every response carries a `ucp` envelope; read `messages[]` before the data
 (`references/errors.md`). If `/.well-known/ucp` returns 404 the standard routes aren't
 deployed on that host — say so; never fabricate a response.
 
+**Not a Claude Code session, or want a read-only tool call instead of writing a script?**
+Use `mcp.vendling.dev` instead — a real MCP (Model Context Protocol) server, connectable
+from Claude Desktop, MCP inspector, or any other MCP client, exposing 14 of this API's
+read operations as first-class tools (no HTTP client to write, no token to hold — it
+carries its own scoped, read-only credential). It covers reads only: writes (checkout,
+price changes, placing a run, resolving an approval) still need this skill's full
+`$VENDLING_AUTH_TOKEN` path. The two are complementary, not alternatives to pick once —
+a Claude Code session with this skill loaded can do everything; an MCP client that only
+needs to read can connect to `mcp.vendling.dev` and skip loading a skill at all.
+
 ## 1. Auth
 
 ```
