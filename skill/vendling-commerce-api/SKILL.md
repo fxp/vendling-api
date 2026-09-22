@@ -45,14 +45,17 @@ Every response carries a `ucp` envelope; read `messages[]` before the data
 deployed on that host — say so; never fabricate a response.
 
 **Not a Claude Code session, or want a read-only tool call instead of writing a script?**
-Use `mcp.vendling.dev` instead — a real MCP (Model Context Protocol) server, connectable
-from Claude Desktop, MCP inspector, or any other MCP client, exposing 14 of this API's
-read operations as first-class tools (no HTTP client to write, no token to hold — it
-carries its own scoped, read-only credential). It covers reads only: writes (checkout,
-price changes, placing a run, resolving an approval) still need this skill's full
-`$VENDLING_AUTH_TOKEN` path. The two are complementary, not alternatives to pick once —
-a Claude Code session with this skill loaded can do everything; an MCP client that only
-needs to read can connect to `mcp.vendling.dev` and skip loading a skill at all.
+Use `https://gateway.vendling.dev/mcp` instead — a real MCP (Model Context Protocol)
+server, connectable from Claude Desktop, MCP inspector, or any other MCP client, exposing
+14 of this API's read operations as first-class tools (no HTTP client to write). Unlike
+the old `mcp.vendling.dev` (retired 2026-09-20 — its 14 tools moved here unchanged), this
+endpoint is role-gated: send `Authorization: Bearer <token>` with a read-only
+`external-mcp` role token — ask the operator for one, the same way you'd ask for
+`$VENDLING_AUTH_TOKEN`. It covers reads only: writes (checkout, price changes, placing a
+run, resolving an approval) still need this skill's full `$VENDLING_AUTH_TOKEN` path. The
+two are complementary, not alternatives to pick once — a Claude Code session with this
+skill loaded can do everything; an MCP client that only needs to read can connect to
+`gateway.vendling.dev/mcp` with just the read-only token and skip loading a skill at all.
 
 ## 1. Auth
 
