@@ -67,7 +67,7 @@ openapi/vendling-commerce.openapi.yaml
 skill/vendling-commerce-api/         SKILL.md, references/, scripts/vendling_client.py
 agent-setup/prompt.md
 scripts/build.py                     markdown → static site (python-markdown; Scalar for the reference)
-wrangler.jsonc                       assets-only Worker "vendling-dev", custom domains vendling.dev + www
+wrangler.jsonc                       assets-only Worker "vendling-docs", custom domains vendling.dev + www
 ```
 
 License: Apache-2.0.

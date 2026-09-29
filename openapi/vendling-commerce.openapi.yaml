@@ -1111,7 +1111,7 @@ components:
         code:
           type: string
           description: Standard UCP codes plus vendling extensions
-          examples: [missing, invalid, not_found, unauthorized, out_of_stock, item_unavailable, request_too_large, namespace_mismatch, namespace_unsupported, unresolved_sku, hard_no_go, approval_rejected, expired, confirmation_required, approval_required, kill_switch_engaged, guard_unverifiable, supplier_rejected, upstream_unreachable, already_placed, already_delivered, simulation_disabled, price_estimated, location_unverified, history_truncated, hours_unknown, sync_problem, same_namespace]
+          examples: [missing, invalid, not_found, unauthorized, out_of_stock, item_unavailable, request_too_large, namespace_mismatch, namespace_unsupported, unresolved_sku, hard_no_go, approval_rejected, expired, confirmation_required, approval_required, kill_switch_engaged, over_budget, over_cap, guard_unverifiable, supplier_rejected, upstream_unreachable, already_placed, already_delivered, simulation_disabled, price_estimated, location_unverified, history_truncated, hours_unknown, sync_problem, same_namespace]
         severity: { type: string, enum: [recoverable, requires_buyer_input, requires_buyer_review, unrecoverable] }
         path: { type: string, description: RFC 9535 JSONPath }
         content: { type: string }
