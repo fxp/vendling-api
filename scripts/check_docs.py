@@ -30,6 +30,13 @@ C_SKILL = ROOT / "skill" / "vendling-commerce-api"
 V_SKILL = ROOT / "skill" / "vendling-vendor-adapter"
 
 PUBLISHED = [SPEC, OPENAPI, README, ROOT / "agent-setup" / "prompt.md", *sorted(C_SKILL.rglob("*.md")), *sorted(C_SKILL.rglob("*.py")), *sorted(V_SKILL.rglob("*.md")), *sorted(V_SKILL.rglob("*.py"))]
+# HAND-MAINTAINED — there is no shared config to source this from: vendor names live in the
+# private vendling-core / vendling-adapters repos, which this public repo's CI cannot read. If a
+# new vendor integration starts (a new entry under vendling-adapters/vendor/, a new namespace in
+# vendling-core's registry.ts, a new docs/adapters/<vendor>.md), add its name (and any romanized
+# spelling / brand it's commonly called) here in the SAME PR — this check only catches names it
+# already knows to look for.
+#
 # 2026-09-18: only covered youbao/ubox — zhipu/mujia/weimi integrations were
 # already in progress (vendling-adapters/vendor/mujia, docs/architecture.md)
 # and none of their names were in this list, so this gate would not have
@@ -146,8 +153,9 @@ if not [p for p in problems if p.startswith("3:")]:
     ok("3", f"operation counts agree ({len(core_api)} core of {total})")
 
 # ── 4. removed routes only in the change log ─────────────────────────────
+published_text = {p: p.read_text(encoding="utf-8") for p in PUBLISHED}
 for route in REMOVED_ROUTES:
-    hits = [p.relative_to(ROOT).as_posix() for p in PUBLISHED if route in p.read_text(encoding="utf-8") and not (p == SPEC and route not in spec_body)]
+    hits = [p.relative_to(ROOT).as_posix() for p in PUBLISHED if route in published_text[p] and not (p == SPEC and route not in spec_body)]
     if hits:
         fail("4", f"removed route {route!r} still referenced in {hits} (only the change log may mention it)")
 if not [p for p in problems if p.startswith("4:")]:
