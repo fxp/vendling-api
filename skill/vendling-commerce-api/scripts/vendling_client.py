@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -72,6 +73,8 @@ def _request(method: str, path: str, body=None, query=None, auth=True):
             raw, status = res.read(), res.status
     except urllib.error.HTTPError as e:
         raw, status = e.read(), e.code
+    except urllib.error.URLError as e:
+        raise VendlingError(0, {"error": f"network error calling {url}: {e.reason}"})
     try:
         parsed = json.loads(raw) if raw else None
     except json.JSONDecodeError:
@@ -249,12 +252,16 @@ def _with_ns(raw: str, role: str) -> str:
 
 
 def _parse_line(spec: str) -> dict:
-    """'acme-supply:10023x2:box' -> {sku_id, quantity: 2, unit: 'BX'}; ':each' or omitted -> EA."""
+    """'acme-supply:10023x2:box' -> {sku_id, quantity: 2, unit: 'BX'}; ':each' or omitted -> EA.
+    Quantity is always the trailing `xN`, so we anchor to the end of the string rather than
+    split on the first "x" — a sku_id/vendor namespace may itself contain a lowercase "x"
+    (e.g. "xiaomi-supply:1002x3")."""
     unit = "EA"
     parts = spec.rsplit(":", 1)
     if len(parts) == 2 and parts[1].lower() in ("box", "bx", "each", "ea"):
         spec, unit = parts[0], ("BX" if parts[1].lower() in ("box", "bx") else "EA")
-    sku_id, _, qty = spec.partition("x")
+    m = re.match(r"^(.+)x(\d+)$", spec)
+    sku_id, qty = (m.group(1), m.group(2)) if m else (spec, "1")
     return {"sku_id": _with_ns(sku_id, "supply"), "quantity": int(qty or 1), "unit": unit}
 
 
