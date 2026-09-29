@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate the A.6 wire types from contracts/adapter-a6.json.
 
-  python3 scripts/gen_adapter_types.py --check           verify checked-in copies
-  python3 scripts/gen_adapter_types.py --write PATH…     (re)write them
+  python3 scripts/gen_adapter_types.py --check --write PATH…   verify checked-in copies
+  python3 scripts/gen_adapter_types.py --write PATH…           (re)write them
 
 Why this exists
 ---------------
