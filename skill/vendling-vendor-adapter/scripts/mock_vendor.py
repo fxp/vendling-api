@@ -141,10 +141,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"ok": False, "reason": "unknown locationId"})
             n = 0
             for line in body.get("lines", []):
+                matched = False
                 for it in items:
                     if it["vendorSku"] == str(line.get("vendorSku")) and isinstance(line.get("priceFen"), int):
                         it["priceFen"] = line["priceFen"]
-                        n += 1
+                        matched = True
+                if matched:
+                    n += 1
             if n != len(body.get("lines", [])):
                 return self._send(400, {"ok": False, "reason": "one or more skus are not in this machine"})
             return self._send(200, {"ok": True, "count": n})
