@@ -58,8 +58,6 @@ none of them is the one that changed.
 
 `python3 scripts/build.py --mirror --out DIR` builds the API pages with relative links for a
 mirror under another host (the copy at `xiaopingfeng.com/apps/vendling/api/`).
-`--project-docs /path/to/vendling-core` additionally renders that repo's README and `docs/*.md`
-under `/docs/` for a local, maintainer-only build.
 
 ## Layout
 

@@ -4,9 +4,6 @@
   python3 scripts/build.py                       → dist/   the portal: home + /api/
   python3 scripts/build.py --mirror --out DIR    → DIR     the /api/ pages only, with relative links,
                                                            for a mirror under another host
-  python3 scripts/build.py --project-docs PATH   also render PATH's README.md + docs/*.md under
-                                                 /docs/ (PATH = a local vendling-core checkout;
-                                                 maintainer-only, that repo is private)
 
 Canonical URLs always point at vendling.dev. Requires python-markdown. No network.
 """
