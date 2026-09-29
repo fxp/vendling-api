@@ -105,7 +105,7 @@
         "category": { "type": "string", "optional": true },
         "imageUrl": { "type": "string", "optional": true },
         "packSize": { "type": "number", "doc": "Units of `each` in one pack (箱规). 1 when sold by the piece only." },
-        "packPriceFen": { "type": "number" },
+        "packPriceFen": { "type": "number", "optional": true, "doc": "Box price; required when packSize > 1. Omit (or leave unset) when packSize == 1 — sold by the piece only." },
         "eachPriceFen": { "type": "number" },
         "eachPriceDerived": { "type": "boolean", "doc": "True when the each price was computed from the pack price rather than quoted by the vendor. The caller says 换算价 when it is." },
         "stock": { "type": "number" }
